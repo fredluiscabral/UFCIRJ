@@ -1,0 +1,19 @@
+*.aux
+*.log
+*.nav
+*.out
+*.snm
+*.toc
+*.vrb
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.swp
+.DS_Store
+# Binários dos exemplos
+/exemplos/openmp/01_threads
+/exemplos/openmp/02_corrida
+/exemplos/openmp/03_critical
+/exemplos/openmp/04_atomic
+/exemplos/openmp/05_reduction
+/exemplos/produtor_consumidor_*/produtor_consumidor
