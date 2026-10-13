@@ -1,49 +1,36 @@
-# Sistemas Operacionais (SO) | UFCIRJ / CEFET-RJ
+# Sistemas Operacionais
 
-Material didático de **Sistemas Operacionais**, com foco inicial em **sincronização de processos e threads**.
+**CEFET/RJ | Graduação em Ciência da Computação**
 
-Repositório previsto: `UFCIRJ/SO`.
+Este diretório reúne slides e programas utilizados nas aulas de **Sistemas Operacionais**. O material será atualizado ao longo do período letivo.
 
-## Estrutura
+## Material de aula
 
-```text
-SO/
-├── README.md
-├── .gitignore
-├── slides/
-│   ├── main.tex            # fonte Beamer (Overleaf)
-│   ├── main.pdf            # PDF compilado
-│   └── Makefile
-├── exemplos/
-│   ├── produtor_consumidor_basico/
-│   ├── produtor_consumidor_diagnostico/
-│   ├── produtor_consumidor_visual/
-│   └── openmp/
-└── docs/
-    └── NOTAS.md
-```
+- **[Slides: sincronização de processos e threads (PDF)](slides/main.pdf)**
+- [Código-fonte dos slides (LaTeX/Beamer)](slides/main.tex)
 
-## Slides
+## Exemplos de programação
 
-Para editar online, crie um projeto no [Overleaf](https://www.overleaf.com/) e carregue `slides/main.tex`. Compilador: **pdfLaTeX**.
+Os exemplos são escritos em **C** e ilustram conceitos discutidos em sala:
 
-Localmente (TeX Live com Beamer, Babel português, TikZ e listings):
+| Pasta | Conteúdo |
+| --- | --- |
+| [`exemplos/produtor_consumidor_basico/`](exemplos/produtor_consumidor_basico/) | Buffer compartilhado e concorrência entre produtor e consumidor. |
+| [`exemplos/produtor_consumidor_diagnostico/`](exemplos/produtor_consumidor_diagnostico/) | Versão experimental para observar resultados inesperados. |
+| [`exemplos/produtor_consumidor_visual/`](exemplos/produtor_consumidor_visual/) | Visualização do conteúdo do buffer durante a execução. |
+| [`exemplos/openmp/`](exemplos/openmp/) | Exemplos com `parallel`, condição de corrida, `critical`, `atomic` e `reduction`. |
+
+### Como compilar e executar
+
+Em um ambiente Linux com **GCC** e **make**, abra o terminal na pasta do exemplo. Para os programas de produtor-consumidor:
 
 ```bash
-cd slides
-make
-```
-
-## Exemplos em C
-
-Requerem **GCC**, `make` e Linux/POSIX para os exemplos com pthreads. Entre na pasta do exemplo e execute:
-
-```bash
+cd exemplos/produtor_consumidor_visual
 make
 ./produtor_consumidor
 ```
 
-Exemplos OpenMP (GCC com suporte a OpenMP):
+Para os exemplos de OpenMP:
 
 ```bash
 cd exemplos/openmp
@@ -55,23 +42,15 @@ make
 ./05_reduction
 ```
 
-O exemplo `02_corrida.c` e os exemplos de produtor-consumidor são **intencionalmente incorretos**, para discussão em sala de aula. Eles podem apresentar *data races* e comportamento indefinido; não devem ser usados como implementação de produção. Nem toda execução exibirá um erro.
+Os caminhos acima são relativos à pasta `SO` deste repositório. Para limpar arquivos gerados na compilação, use `make clean` quando disponível.
 
-## Publicar no GitHub
+## Atenção aos exemplos sem sincronização
 
-Depois de criar o repositório vazio `UFCIRJ/SO` (caso tenha permissões na organização UFCIRJ), na pasta `SO`:
+Alguns programas contêm **erros intencionais de concorrência**, para fins didáticos. Eles podem perder dados, apresentar resultados inesperados ou aparentar funcionar corretamente, dependendo da execução. Programas com acessos concorrentes conflitantes sem sincronização podem ter **comportamento indefinido em C**.
 
-```bash
-git init
-git add .
-git commit -m "Adiciona aula de sincronização e exemplos em C"
-git branch -M main
-git remote add origin https://github.com/UFCIRJ/SO.git
-git push -u origin main
-```
+**Não utilize esses exemplos como implementações prontas para aplicações reais.** O objetivo é analisar os problemas e discutir as soluções apresentadas nas aulas.
 
-Se a organização/repositório ainda não existir, crie-o antes do `git push`. Este pacote **não foi publicado automaticamente**.
+## Referências
 
-## Estado do material
-
-O PDF foi gerado a partir do `main.tex` incluído no pacote. Os exemplos de OpenMP são versões executáveis dos trechos discutidos na apresentação. Consulte `docs/NOTAS.md` para limitações didáticas e de formatação.
+- Remzi H. Arpaci-Dusseau e Andrea C. Arpaci-Dusseau. *Operating Systems: Three Easy Pieces (OSTEP)*: https://pages.cs.wisc.edu/~remzi/OSTEP/
+- Especificações do OpenMP: https://www.openmp.org/specifications/
