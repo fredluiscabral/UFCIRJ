@@ -357,7 +357,7 @@ O item \textbf{10 foi sobrescrito} por 20, e o índice avançou apenas até \tex
 \item \textbf{Região crítica}: que trechos acessam dados compartilhados?
 \item \textbf{Exclusão mútua}: como impedir interferências perigosas?
 \item \textbf{Coordenação}: como aguardar \emph{buffer não vazio} ou \emph{buffer não cheio}?
-\item \textbf{Primitivas}: mutex, variáveis de condição e semáforos.
+\item \textbf{Primitivas}: mutex e semáforos.
 \end{enumerate}
 \vfill
 \begin{block}{Mensagem principal}
@@ -1336,10 +1336,6 @@ e dos requisitos do programa.
 
 
 % ============================================================
-% PARTE 2 — SEMÁFOROS, MONITORES E PROBLEMAS CLÁSSICOS
-% ============================================================
-
-% ============================================================
 % PARTE 2 — SEMÁFOROS E PROBLEMAS CLÁSSICOS
 % ============================================================
 \section{Semáforos POSIX e problemas clássicos}
@@ -1409,26 +1405,6 @@ signal(S): devolver uma permissão; liberar eventual espera
 \begin{alertblock}{Importante}
 A implementação interna de \texttt{wait}/\texttt{signal} não é um simples \texttt{if} seguido de incremento/decremento comum.
 \end{alertblock}
-\end{frame}
-
-
-
-\begin{frame}{Variáveis de condição: esperar e sinalizar}
-\begin{block}{Padrão conceitual (semântica de Mesa)}
-\ttfamily\small
-entrar no monitor\\
-while (condição necessária NÃO satisfeita):\\
-\hspace*{0.6cm}wait(condição) \quad // libera o monitor ao aguardar\\
-acessar ou alterar o estado compartilhado\\
-signal(condição) \quad // notifica mudança relevante\\
-sair do monitor
-\end{block}
-\vspace{0.25cm}
-\begin{itemize}
-\item \texttt{wait} libera a exclusão mútua e suspende a thread de forma coordenada.
-\item Ao despertar, a thread readquire o acesso ao monitor.
-\item Usamos \textbf{while}, pois a condição pode deixar de valer antes de a thread prosseguir.
-\end{itemize}
 \end{frame}
 
 
