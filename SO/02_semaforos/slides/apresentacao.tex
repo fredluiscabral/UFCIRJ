@@ -1826,6 +1826,121 @@ Por que um único sinal de ``barbeiro disponível'' pode não identificar qual c
 \end{alertblock}
 \end{frame}
 
+
+% ============================================================
+% APLICACOES REAIS DOS QUATRO PROBLEMAS CLASSICOS
+% ============================================================
+\begin{frame}{Onde aparecem os problemas clássicos?}
+\small
+\begin{block}{Os mesmos padrões aparecem em sistemas reais}
+\begin{itemize}
+\item \textbf{Produtor--consumidor:} filas de impressão, streaming e processamento de requisições.
+\item \textbf{Leitores--escritores:} caches compartilhados, bancos de dados e sistemas de arquivos.
+\item \textbf{Filósofos jantando:} transações e threads que precisam adquirir vários recursos.
+\item \textbf{Barbeiro dorminhoco:} servidores com fila limitada e serviços que aguardam solicitações.
+\end{itemize}
+\end{block}
+\begin{alertblock}{Ideia}
+Os personagens mudam, mas os desafios continuam: concorrência, coordenação e acesso seguro a recursos.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Produtor--consumidor em sistemas reais}
+\small
+\begin{block}{Exemplo 1: fila de impressão}
+Aplicações enviam documentos (produtores); um serviço de impressão retira e processa trabalhos (consumidor).
+\end{block}
+\begin{block}{Exemplo 2: streaming de vídeo}
+Uma thread recebe dados da rede; outra os decodifica. Um buffer absorve diferenças momentâneas de velocidade.
+\end{block}
+\begin{block}{Exemplo 3: servidor com workers}
+Uma thread recebe requisições e outras retiram tarefas de uma fila limitada.
+\end{block}
+\begin{alertblock}{Pergunta}
+Se a fila estiver cheia, o que acontece com a thread produtora na nossa solução?
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Leitores--escritores em sistemas reais}
+\small
+\begin{block}{Exemplo 1: cache compartilhado}
+Muitas threads consultam dados em paralelo; atualizações exigem coordenação com as leituras.
+\end{block}
+\begin{block}{Exemplo 2: banco de dados}
+Consultas e alterações concorrentes precisam preservar a consistência dos dados.
+\end{block}
+\begin{block}{Exemplo 3: metadados de arquivos}
+Várias threads consultam informações; modificações precisam ser sincronizadas.
+\end{block}
+\begin{alertblock}{Atenção}
+Bancos de dados e sistemas de arquivos reais podem usar técnicas mais sofisticadas, como MVCC e bloqueios por granularidade.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Filósofos jantando em sistemas reais}
+\small
+\begin{block}{Exemplo 1: transferência entre contas}
+Uma transação bloqueia a conta A e espera B; outra bloqueia B e espera A. Pode ocorrer \textbf{deadlock}.
+\end{block}
+\begin{block}{Exemplo 2: aquisição de múltiplos mutexes}
+Thread 1 adquire \texttt{mutex1} antes de \texttt{mutex2}; thread 2 faz o contrário.
+\end{block}
+\begin{block}{Estratégia prática}
+Estabelecer uma \textbf{ordem global de aquisição} dos recursos evita a formação de espera circular.
+\end{block}
+\begin{alertblock}{Pergunta}
+Por que todas as threads adquirirem os mutexes na mesma ordem ajuda a evitar deadlock?
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Barbeiro dorminhoco em sistemas reais}
+\small
+\begin{block}{Exemplo 1: servidor com fila limitada}
+Uma thread atende requisições; outras aguardam em fila. Se a fila estiver cheia, novas solicitações podem ser rejeitadas.
+\end{block}
+\begin{block}{Exemplo 2: processamento de tarefas}
+Um worker aguarda trabalho sem consumir CPU continuamente. Uma chegada sinaliza que existe tarefa disponível.
+\end{block}
+\begin{block}{Mapeamento da analogia}
+Barbeiro = worker; clientes = solicitações; cadeiras = capacidade da fila; corte = processamento.
+\end{block}
+\begin{alertblock}{Pergunta}
+Quando a fila está cheia, o sistema deve bloquear a chegada ou rejeitar o pedido?
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Produtor--consumidor vs.\ barbeiro dorminhoco}
+\small
+\begin{tabular}{p{3.25cm}p{3cm}p{3cm}}
+\toprule
+\textbf{Aspecto} & \textbf{Produtor--consumidor} & \textbf{Barbeiro}\\
+\midrule
+Fila/buffer limitado & Sim & Sim\\
+Quando não há trabalho & Consumidor aguarda & Barbeiro dorme\\
+Quando a fila enche & Produtor aguarda & Cliente pode ir embora\\
+Principal ênfase & Disponibilidade de itens e vagas & Eventos de atendimento e capacidade\\
+\bottomrule
+\end{tabular}
+\vspace{0.3cm}
+\begin{block}{Discussão}
+Bloquear a solicitação e rejeitá-la são duas políticas possíveis de controle de sobrecarga.
+\end{block}
+\end{frame}
+
+\begin{frame}{Síntese: um mesmo servidor pode reunir os quatro}
+\small
+\begin{enumerate}
+\setlength\itemsep{0.22cm}
+\item \textbf{Produtor--consumidor:} requisições entram em uma fila e são processadas por workers.
+\item \textbf{Leitores--escritores:} requisições consultam ou atualizam um cache compartilhado.
+\item \textbf{Filósofos:} algumas operações exigem vários locks e podem gerar deadlock.
+\item \textbf{Barbeiro:} ao atingir a capacidade da fila, o servidor pode rejeitar novas solicitações.
+\end{enumerate}
+\begin{alertblock}{Questão para a turma}
+Quais desses padrões poderiam ocorrer simultaneamente em um único servidor web?
+\end{alertblock}
+\end{frame}
+
 \begin{frame}{Atividade de observação dos programas}
 \small
 \begin{enumerate}
