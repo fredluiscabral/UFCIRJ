@@ -1,56 +1,68 @@
 # Sistemas Operacionais
 
-**CEFET/RJ | Graduação em Ciência da Computação**
+**CEFET/RJ — Bacharelado em Ciência da Computação**
 
-Este diretório reúne slides e programas utilizados nas aulas de **Sistemas Operacionais**. O material será atualizado ao longo do período letivo.
+**Professor:** Frederico Luís Cabral
 
-## Material de aula
+Este diretório reúne os materiais da disciplina de Sistemas
+Operacionais, incluindo apresentações, programas em C e
+atividades práticas.
 
-- **[Slides: sincronização de processos e threads (PDF)](slides/main.pdf)**
-- [Código-fonte dos slides (LaTeX/Beamer)](slides/main.tex)
+## Unidade 1 — Concorrência e Exclusão Mútua
 
-## Exemplos de programação
+Conteúdos:
 
-Os exemplos são escritos em **C** e ilustram conceitos discutidos em sala:
+- Processos e threads
+- Condições de corrida
+- Regiões críticas
+- Exclusão mútua
+- Alternância estrita
+- Algoritmo de Peterson
+- OpenMP: critical, atomic e reduction
 
-| Pasta | Conteúdo |
-| --- | --- |
-| [`exemplos/produtor_consumidor_basico/`](exemplos/produtor_consumidor_basico/) | Buffer compartilhado e concorrência entre produtor e consumidor. |
-| [`exemplos/produtor_consumidor_diagnostico/`](exemplos/produtor_consumidor_diagnostico/) | Versão experimental para observar resultados inesperados. |
-| [`exemplos/produtor_consumidor_visual/`](exemplos/produtor_consumidor_visual/) | Visualização do conteúdo do buffer durante a execução. |
-| [`exemplos/openmp/`](exemplos/openmp/) | Exemplos com `parallel`, condição de corrida, `critical`, `atomic` e `reduction`. |
+[**Acessar a Unidade 1**](01_concorrencia_exclusao_mutua/)
 
-### Como compilar e executar
+[Slides em PDF](01_concorrencia_exclusao_mutua/slides/Sistemas_Operacionais_sincronizacao_parte1.pdf)
 
-Em um ambiente Linux com **GCC** e **make**, abra o terminal na pasta do exemplo. Para os programas de produtor-consumidor:
+## Unidade 2 — Semáforos e Problemas Clássicos
 
-```bash
-cd exemplos/produtor_consumidor_visual
-make
-./produtor_consumidor
-```
+Conteúdos:
 
-Para os exemplos de OpenMP:
+- Semáforos binários e contadores
+- Operações wait e signal
+- Semáforos POSIX
+- OpenMP e semáforos
+- Produtor-consumidor
+- Leitores e escritores
+- Filósofos jantando
+- Barbeiro dorminhoco
 
-```bash
-cd exemplos/openmp
-make
-./01_threads
-./02_corrida
-./03_critical
-./04_atomic
-./05_reduction
-```
+[**Acessar a Unidade 2**](02_semaforos/)
 
-Os caminhos acima são relativos à pasta `SO` deste repositório. Para limpar arquivos gerados na compilação, use `make clean` quando disponível.
+[Slides em PDF](02_semaforos/slides/apresentacao.pdf)
 
-## Atenção aos exemplos sem sincronização
+### Exemplos em C
 
-Alguns programas contêm **erros intencionais de concorrência**, para fins didáticos. Eles podem perder dados, apresentar resultados inesperados ou aparentar funcionar corretamente, dependendo da execução. Programas com acessos concorrentes conflitantes sem sincronização podem ter **comportamento indefinido em C**.
+Os programas utilizam OpenMP e semáforos POSIX.
 
-**Não utilize esses exemplos como implementações prontas para aplicações reais.** O objetivo é analisar os problemas e discutir as soluções apresentadas nas aulas.
+Para compilar:
+
+    cd SO/02_semaforos/exemplos
+    make
+
+Para executar:
+
+    ./01_contador_semaforo
+    ./02_produtor_consumidor_openmp_posix
+    ./03_leitores_escritores
+    ./04_filosofos
+    ./05_barbeiro
+
+## Atividades
+
+[**Acessar atividades práticas**](atividades/)
 
 ## Referências
 
-- Remzi H. Arpaci-Dusseau e Andrea C. Arpaci-Dusseau. *Operating Systems: Three Easy Pieces (OSTEP)*: https://pages.cs.wisc.edu/~remzi/OSTEP/
-- Especificações do OpenMP: https://www.openmp.org/specifications/
+- [Operating Systems: Three Easy Pieces](https://pages.cs.wisc.edu/~remzi/OSTEP/)
+- [OpenMP](https://www.openmp.org/)

@@ -17,3 +17,11 @@
 /exemplos/openmp/04_atomic
 /exemplos/openmp/05_reduction
 /exemplos/produtor_consumidor_*/produtor_consumidor
+
+# Executáveis gerados pelos exemplos
+01_threads
+02_corrida
+03_critical
+04_atomic
+05_reduction
+produtor_consumidor
