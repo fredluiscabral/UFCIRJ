@@ -1,0 +1,2491 @@
+\documentclass[aspectratio=169,11pt]{beamer}
+\usetheme{Madrid}
+\usecolortheme{default}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[brazil]{babel}
+\usepackage{lmodern}
+\usepackage{tikz}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usetikzlibrary{positioning,arrows.meta,calc}
+
+\definecolor{azulcefet}{HTML}{143A62}
+\definecolor{azulclaro}{HTML}{EAF1F8}
+\definecolor{verdeprod}{HTML}{16834A}
+\definecolor{azulcons}{HTML}{1769AA}
+\definecolor{vermelhoerro}{HTML}{B5232A}
+\definecolor{cinza}{HTML}{5E6670}
+\setbeamercolor{structure}{fg=azulcefet}
+\setbeamercolor{frametitle}{bg=azulcefet,fg=white}
+%\setbeamercolor{title}{fg=azulcefet}
+\setbeamercolor{title}{bg=azulcefet,fg=white}
+\setbeamercolor{subtitle}{fg=white}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+\setbeamertemplate{itemize items}[circle]
+
+\lstdefinestyle{codigoC}{
+ language=C, basicstyle=\ttfamily\scriptsize, keywordstyle=\color{azulcefet}\bfseries,
+ commentstyle=\color{cinza}\itshape, stringstyle=\color{verdeprod},
+ showstringspaces=false, breaklines=true, columns=fullflexible,
+ keepspaces=true, tabsize=4, frame=single, rulecolor=\color{azulclaro},
+ backgroundcolor=\color{azulclaro}, xleftmargin=4pt, xrightmargin=4pt
+}
+\lstset{style=codigoC}
+
+\newcommand{\caixa}[3]{% pos, valor, cor
+\node[draw=#3,very thick,minimum width=1.45cm,minimum height=1.15cm,
+  fill=#3!8,font=\Large\bfseries] at (#1,0) {#2};
+\node[below=0.72cm,font=\footnotesize\color{cinza}] at (#1,0) {#1};}
+
+\title{Sistemas Operacionais}
+
+\subtitle{Sincronização de processos e threads\\
+Fundamentos, semáforos e mecanismos de sincronização}
+
+\author{Prof. Frederico Luís Cabral}
+
+\institute{
+    Universidade Federal de Ciência e Inovação do Rio de Janeiro (UFCIRJ)\\[0.15cm]
+    Bacharelado em Ciência da Computação\\[0.3cm]
+    \href{https://github.com/fredluiscabral/UFCIRJ/tree/main/SO}
+    {\textcolor{cyan}{\footnotesize
+    github.com/fredluiscabral/UFCIRJ/tree/main/SO}}
+}
+
+\date{Outubro e novembro de 2026}
+
+\begin{document}
+
+\begin{frame}[plain]
+\titlepage
+\end{frame}
+
+\begin{frame}{Uma situação real: produzir e consumir dados}
+\begin{columns}[T,onlytextwidth]
+\column{0.54\textwidth}
+\begin{itemize}
+\setlength\itemsep{0.6em}
+\item Uma \textcolor{verdeprod}{\textbf{thread produtora}} gera itens.
+\item Uma \textcolor{azulcons}{\textbf{thread consumidora}} processa itens.
+\item Ambas acessam um \textbf{buffer compartilhado}.
+\item O buffer tem \textbf{capacidade finita}: 5 posições.
+\end{itemize}
+\column{0.43\textwidth}
+\centering
+\begin{tikzpicture}[>=Latex,scale=.85,transform shape]
+\node[draw=verdeprod,rounded corners=5pt,fill=verdeprod!10,minimum width=3cm,minimum height=0.9cm] (p) at (0,2) {\textbf{PRODUTOR}};
+\node[draw=azulcefet,rounded corners=5pt,fill=azulclaro,minimum width=4.3cm,minimum height=0.9cm] (b) at (0,0) {\textbf{BUFFER [5]}};
+\node[draw=azulcons,rounded corners=5pt,fill=azulcons!10,minimum width=3cm,minimum height=0.9cm] (c) at (0,-2) {\textbf{CONSUMIDOR}};
+\draw[->,very thick,verdeprod] (p)--(b);
+\draw[->,very thick,azulcons] (b)--(c);
+\end{tikzpicture}
+\end{columns}
+\vfill
+\begin{block}{Pergunta para a turma}
+O que pode acontecer quando as duas threads executam concorrentemente?
+\end{block}
+\end{frame}
+
+\begin{frame}{O buffer circular}
+\centering
+\begin{tikzpicture}
+\foreach \x/\v in {0/1,1/2,2/3,3/4,4/5}{\caixa{\x}{\v}{azulcefet}}
+\draw[->,thick,verdeprod] (4.5,1.45) -- (4,0.75) node[pos=0,above right,font=\footnotesize] {próxima escrita};
+\draw[->,thick,azulcons] (-0.7,1.4) -- (0,0.75) node[pos=0,above left,font=\footnotesize] {próxima leitura};
+\end{tikzpicture}
+\vspace{1.1em}
+\begin{itemize}
+\item Índice de escrita: \texttt{entrada = (entrada + 1) \% 5}
+\item Índice de leitura: \texttt{saida = (saida + 1) \% 5}
+\item Ao chegar ao fim, cada índice \textbf{volta à posição zero}.
+\end{itemize}
+\begin{alertblock}{Questão}
+O índice circular, sozinho, impede a sobrescrita de dados não consumidos?
+\end{alertblock}
+\end{frame}
+
+\begin{frame}[fragile]{Primeira implementação: dados compartilhados}
+\begin{lstlisting}
+#define TAM_BUFFER 5
+#define TOTAL_ITENS 20
+
+int buffer[TAM_BUFFER] = {0};
+int entrada = 0;
+int saida = 0;
+\end{lstlisting}
+\vspace{0.5em}
+\begin{itemize}
+\item \texttt{buffer}: vetor visível às duas threads.
+\item \texttt{entrada}: posição onde o produtor escreverá.
+\item \texttt{saida}: posição de onde o consumidor lerá.
+\item Valor \texttt{0}: marcador didático de posição vazia (itens válidos: 1 a 20).
+\end{itemize}
+\vfill
+\textcolor{cinza}{\footnotesize O código completo está no arquivo \texttt{produtor\_consumidor.c} do projeto.}
+\end{frame}
+
+\begin{frame}[fragile]{O produtor: escreve sem verificar espaço livre}
+\begin{lstlisting}
+void *produtor(void *arg) {
+    for (int item = 1; item <= TOTAL_ITENS; ++item) {
+        usleep(100000);           // 100 ms
+        int pos = entrada;
+        buffer[pos] = item;       // escreve SEM verificar!
+        entrada = (entrada + 1) % TAM_BUFFER;
+        printf("PRODUZ %d -> posicao %d\n", item, pos);
+        mostrar_buffer();
+    }
+    return NULL;
+}
+\end{lstlisting}
+\begin{block}{Observe}
+O produtor pode escrever em uma posição que ainda guarda um item não consumido.
+\end{block}
+\end{frame}
+
+\begin{frame}[fragile]{O consumidor: lê sem verificar se há item}
+\begin{lstlisting}
+void *consumidor(void *arg) {
+    for (int i = 0; i < TOTAL_ITENS; ++i) {
+        usleep(150000);           // 150 ms
+        int pos = saida;
+        int item = buffer[pos];   // le SEM verificar!
+        buffer[pos] = 0;          // limpa visualmente
+        saida = (saida + 1) % TAM_BUFFER;
+        printf("CONSOME %d <- posicao %d\n", item, pos);
+        mostrar_buffer();
+    }
+    return NULL;
+}
+\end{lstlisting}
+\begin{block}{Observe}
+O consumidor pode ler uma posição vazia, ou receber um item diferente daquele esperado.
+\end{block}
+\end{frame}
+
+\begin{frame}[fragile]{As duas threads executam concorrentemente}
+\begin{lstlisting}
+int main(void) {
+    pthread_t tprod, tcons;
+
+    pthread_create(&tprod, NULL, produtor, NULL);
+    pthread_create(&tcons, NULL, consumidor, NULL);
+
+    pthread_join(tprod, NULL);
+    pthread_join(tcons, NULL);
+    return 0;
+}
+\end{lstlisting}
+\begin{itemize}
+\item \texttt{pthread\_create}: inicia cada thread.
+\item \texttt{pthread\_join}: faz a thread principal aguardar o término.
+\item \textbf{Nenhuma dessas chamadas protege o buffer.}
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Evolução possível do buffer (intercalação ilustrativa)}
+\small
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Operação} & \textbf{Buffer após a operação} & \textbf{Observação}\\
+\midrule
+\textcolor{verdeprod}{Produz 1} & \texttt{[ 1][ --][ --][ --][ --]} & \textcolor{verdeprod}{escreve na posição 0}\\
+\textcolor{azulcons}{Consome 1} & \texttt{[ --][ --][ --][ --][ --]} & \textcolor{azulcons}{retira da posição 0}\\
+\textcolor{verdeprod}{Produz 2} & \texttt{[ --][ 2][ --][ --][ --]} & \\
+\textcolor{verdeprod}{Produz 3} & \texttt{[ --][ 2][ 3][ --][ --]} & \\
+\textcolor{azulcons}{Consome 2} & \texttt{[ --][ --][ 3][ --][ --]} & \\
+\textcolor{verdeprod}{Produz 4} & \texttt{[ --][ --][ 3][ 4][ --]} & \\
+\textcolor{verdeprod}{Produz 5} & \texttt{[ --][ --][ 3][ 4][ 5]} & \\
+\textcolor{verdeprod}{Produz 6} & \texttt{[ 6][ --][ 3][ 4][ 5]} & \\
+\bottomrule
+\end{tabular}
+\end{center}
+\vfill
+\footnotesize\textcolor{cinza}{Esta sequência é ilustrativa: a ordem real varia conforme o escalonamento. Não é uma transcrição de uma execução observada.}
+\end{frame}
+
+\begin{frame}{O momento da falha: um item é sobrescrito}
+\centering
+\textbf{O consumidor ainda não leu o item 3.}\par
+\vspace{0.45em}
+\begin{tikzpicture}
+\foreach \x/\v in {0/6,1/7,2/3,3/4,4/5}{\caixa{\x}{\v}{azulcefet}}
+\draw[->,thick,verdeprod] (2,1.15) -- (2,.67);
+\node[above=1.17cm,font=\footnotesize,verdeprod] at (2,0) {Produtor escreverá o item 8 na posição 2};
+\end{tikzpicture}
+\vspace{0.65em}
+\textcolor{vermelhoerro}{\bfseries O produtor escreve sem esperar por espaço livre:}\par
+\vspace{0.25em}
+\begin{tikzpicture}
+\foreach \x/\v in {0/6,1/7,2/8,3/4,4/5}{
+  \ifnum\x=2 \caixa{\x}{\v}{vermelhoerro}
+  \else \caixa{\x}{\v}{azulcefet}\fi}
+\end{tikzpicture}
+\vspace{0.7em}
+\begin{alertblock}{O que aconteceu com o item 3?}
+O item \textbf{8} ocupou a mesma posição: o item \textbf{3} foi perdido antes da leitura.
+\end{alertblock}
+\end{frame}
+
+
+
+\begin{frame}{Segundo problema: e se o buffer estiver vazio?}
+\centering
+\textbf{Agora considere o consumidor mais rápido que o produtor.}\par
+\vspace{0.6em}
+\begin{tikzpicture}
+\foreach \x in {0,1,2,3,4}{\caixa{\x}{--}{azulcefet}}
+\draw[->,thick,azulcons] (-.1,1.5) -- (0,.65);
+\node[above=1.4cm,font=\footnotesize,azulcons] at (0,0) {Consumidor tenta ler posição 0};
+\end{tikzpicture}
+\vspace{1.0em}
+\begin{alertblock}{Pergunta}
+O que o consumidor recebe se ele lê uma posição que ainda não contém um novo item?
+\end{alertblock}
+\vfill
+\footnotesize\textcolor{cinza}{Cenário ilustrativo: pode ocorrer na versão sem sincronização ao alterar as velocidades relativas, por exemplo, consumidor a 50 ms e produtor a 150 ms.}
+\end{frame}
+
+\begin{frame}[fragile]{Buffer vazio: o consumidor lê sem esperar}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Evento} & \textbf{Estado após o evento}\\
+\midrule
+\textcolor{azulcons}{CONSOME 0 $\leftarrow$ pos. 0} & \texttt{[ --][ --][ --][ --][ --]} \\
+\textcolor{azulcons}{CONSOME 0 $\leftarrow$ pos. 1} & \texttt{[ --][ --][ --][ --][ --]} \\
+\textcolor{verdeprod}{PRODUZ 1 $\rightarrow$ pos. 0} & \texttt{[ 1][ --][ --][ --][ --]} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\vspace{.4em}
+\begin{lstlisting}
+int pos = saida;
+int item = buffer[pos];   // pode ler 0: posicao vazia!
+buffer[pos] = 0;
+saida = (saida + 1) % TAM_BUFFER;
+\end{lstlisting}
+\begin{block}{O defeito}
+Não existe uma espera por \textbf{item disponível}. O consumidor pode avançar a posição de leitura sem ter consumido nenhum item válido.
+\end{block}
+\footnotesize\textcolor{cinza}{Sequência possível, não captura de execução. Zero é marcador didático de vazio.}
+\end{frame}
+
+\begin{frame}{Terceiro problema: condição de corrida no índice}
+\begin{block}{Uma pequena variação do sistema}
+Agora temos \textbf{dois produtores}, P1 e P2, compartilhando a variável global \texttt{entrada}. Ambos querem inserir um item.
+\end{block}
+\vspace{.6em}
+\begin{center}
+\begin{tikzpicture}
+\node[draw=verdeprod,rounded corners,fill=verdeprod!10,minimum width=2cm] (p1) at (-2,1) {P1: item 10};
+\node[draw=verdeprod,rounded corners,fill=verdeprod!10,minimum width=2cm] (p2) at (2,1) {P2: item 20};
+\node[draw=azulcefet,fill=azulclaro,minimum width=3.0cm,minimum height=.7cm] (idx) at (0,-.2) {\texttt{entrada = 0}};
+\draw[->,thick] (p1)--(idx); \draw[->,thick] (p2)--(idx);
+\end{tikzpicture}
+\end{center}
+\vspace{.5em}
+\begin{alertblock}{O que muda?}
+Diferentemente do caso anterior, \textbf{duas threads modificam a mesma variável de posição}, sem exclusão mútua.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}[fragile]{O trecho vulnerável: ambos usam \texttt{entrada}}
+\begin{lstlisting}
+// Executado tanto por P1 quanto por P2
+int pos = entrada;                 // leitura compartilhada
+buffer[pos] = item;                // escrita no buffer
+entrada = (entrada + 1) % TAM_BUFFER; // atualizacao
+\end{lstlisting}
+\vspace{.7em}
+\begin{block}{Por que isso não é uma única operação?}
+Uma thread pode ser interrompida entre a leitura de \texttt{entrada} e sua atualização. Nesse intervalo, outra thread pode ler o \textbf{mesmo valor}.
+\end{block}
+\begin{center}
+\large\textcolor{vermelhoerro}{As duas podem escolher a mesma posição!}
+\end{center}
+\end{frame}
+
+\begin{frame}{Intercalação: duas threads escolhem a posição 0}
+\small
+\begin{center}
+\begin{tabular}{c p{4.1cm} p{4.1cm}}
+\toprule
+\textbf{Passo} & \textbf{Produtor P1 (item 10)} & \textbf{Produtor P2 (item 20)}\\
+\midrule
+1 & \texttt{pos = entrada} (lê 0) & \\
+2 & & \texttt{pos = entrada} (lê 0) \\
+3 & \texttt{buffer[0] = 10} & \\
+4 & & \texttt{buffer[0] = 20} \\
+5 & \texttt{entrada = 1} & \\
+6 & & \texttt{entrada = 1} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\vspace{.5em}
+\begin{tikzpicture}[scale=.76,transform shape]
+\foreach \x/\v in {0/20,1/--,2/--,3/--,4/--}{\ifnum\x=0 \caixa{\x}{\v}{vermelhoerro}\else\caixa{\x}{\v}{azulcefet}\fi}
+\end{tikzpicture}
+\vspace{.35em}
+\begin{alertblock}{Resultado desse entrelaçamento}
+O item \textbf{10 foi sobrescrito} por 20, e o índice avançou apenas até \texttt{1}. Os dois produtores acreditavam ter reservado a mesma posição.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Três falhas, três perguntas}
+\begin{enumerate}
+\setlength\itemsep{1em}
+\item \textbf{Buffer cheio:} como impedir que o produtor sobrescreva itens pendentes?
+\item \textbf{Buffer vazio:} como impedir que o consumidor leia sem haver item disponível?
+\item \textbf{Condição de corrida:} como garantir que dois produtores não escolham a mesma posição?
+\end{enumerate}
+\vfill
+\begin{block}{Duas necessidades distintas}
+\textbf{Coordenação} (esperar por espaço ou itens) e \textbf{exclusão mútua} (proteger atualizações concorrentes).
+\end{block}
+\footnotesize\textcolor{cinza}{Em C, acessos conflitantes não atômicos e sem sincronização caracterizam uma data race e geram comportamento indefinido.}
+\end{frame}
+
+\begin{frame}{Próximos conceitos}
+\begin{enumerate}
+\setlength\itemsep{0.8em}
+\item \textbf{Região crítica}: que trechos acessam dados compartilhados?
+\item \textbf{Exclusão mútua}: como impedir interferências perigosas?
+\item \textbf{Coordenação}: como aguardar \emph{buffer não vazio} ou \emph{buffer não cheio}?
+\item \textbf{Primitivas}: mutex e semáforos.
+\end{enumerate}
+\vfill
+\begin{block}{Mensagem principal}
+Ter duas threads em execução não garante que elas cooperem corretamente. \textbf{É necessário sincronizar.}
+\end{block}
+\end{frame}
+
+% ============================================================
+% SLIDE 18 - REGIÃO CRÍTICA
+% ============================================================
+
+\begin{frame}{Região Crítica}
+
+\begin{block}{Definição}
+Uma \textbf{região crítica} é um trecho de código que acessa
+recursos compartilhados e cuja execução concorrente precisa
+ser controlada para preservar a correção do programa.
+\end{block}
+
+\vspace{0.4cm}
+
+\textbf{Exemplos de recursos compartilhados:}
+
+\begin{itemize}
+    \item Variáveis e estruturas de dados em memória;
+    \item Buffers e filas compartilhadas;
+    \item Arquivos e dispositivos de entrada e saída;
+    \item Estruturas internas do Sistema Operacional.
+\end{itemize}
+
+\vspace{0.3cm}
+
+\begin{alertblock}{Problema}
+A execução concorrente de operações sobre um recurso
+compartilhado pode produzir resultados incorretos
+quando não existe sincronização adequada.
+\end{alertblock}
+
+\end{frame}
+
+
+% ============================================================
+% SLIDE 19 - REGIÃO CRÍTICA NO PRODUTOR-CONSUMIDOR
+% ============================================================
+
+\begin{frame}[fragile]{Região Crítica: Produtor-Consumidor}
+
+\begin{columns}[T]
+
+\begin{column}{0.48\textwidth}
+
+\begin{block}{Produtor}
+
+\begin{verbatim}
+int posicao = entrada;
+
+buffer[posicao] = item;
+
+entrada = (entrada + 1)
+          % TAM_BUFFER;
+\end{verbatim}
+
+\end{block}
+
+\end{column}
+
+\begin{column}{0.48\textwidth}
+
+\begin{block}{Consumidor}
+
+\begin{verbatim}
+int posicao = saida;
+
+int item = buffer[posicao];
+
+buffer[posicao] = 0;
+
+saida = (saida + 1)
+        % TAM_BUFFER;
+\end{verbatim}
+
+\end{block}
+
+\end{column}
+
+\end{columns}
+
+\vspace{0.4cm}
+
+\begin{alertblock}{O que existe em comum?}
+Ambas as threads acessam o mesmo \texttt{buffer}.
+
+Se acessarem simultaneamente a mesma posição, poderão
+ocorrer interferências entre suas operações.
+\end{alertblock}
+
+\end{frame}
+
+
+% ============================================================
+% SLIDE 20 - EXCLUSÃO MÚTUA
+% ============================================================
+
+\begin{frame}{Exclusão Mútua}
+
+\begin{block}{Definição}
+A \textbf{exclusão mútua} é uma propriedade de sincronização
+que garante que, em um determinado instante,
+\textbf{no máximo uma thread ou processo}
+execute uma região crítica protegida pelo mesmo mecanismo.
+\end{block}
+
+\vspace{0.4cm}
+
+\textbf{Objetivo:}
+
+\begin{itemize}
+    \item Evitar acessos conflitantes simultâneos;
+    \item Preservar a consistência dos dados compartilhados;
+    \item Impedir interferências entre operações críticas.
+\end{itemize}
+
+\vspace{0.4cm}
+
+\begin{alertblock}{Ideia fundamental}
+Se uma thread está executando a região crítica,
+outra thread que deseja executar a mesma região protegida
+deve aguardar.
+\end{alertblock}
+
+\end{frame}
+
+
+% ============================================================
+% SLIDE 21 - ESTRUTURA DE UMA SOLUÇÃO
+% ============================================================
+
+\begin{frame}[fragile]{Estrutura de uma Solução com Exclusão Mútua}
+
+\begin{block}{Estrutura geral}
+
+\begin{verbatim}
+while (1) {
+
+    /* Regiao de entrada */
+    /* REGIAO CRITICA */
+    /* Regiao de saida */
+    /* Regiao restante */
+
+}
+\end{verbatim}
+
+\end{block}
+
+\vspace{0.3cm}
+
+\begin{itemize}
+    \item \textbf{Região de entrada:} solicita permissão para
+    acessar a região crítica.
+
+    \item \textbf{Região crítica:} acessa ou modifica
+    os recursos compartilhados.
+
+    \item \textbf{Região de saída:} libera a região crítica.
+
+    \item \textbf{Região restante:} executa operações que
+    não precisam daquela exclusão mútua.
+\end{itemize}
+
+\end{frame}
+
+
+% ============================================================
+% SLIDE 22 - EXCLUSÃO MÚTUA É SUFICIENTE?
+% ============================================================
+
+\begin{frame}{Exclusão Mútua é Suficiente?}
+
+Considere novamente o problema do produtor-consumidor.
+
+\vspace{0.4cm}
+
+Mesmo que produtor e consumidor nunca acessem
+simultaneamente o buffer:
+
+\vspace{0.2cm}
+
+\begin{itemize}
+    \setlength{\itemsep}{0.35cm}
+
+    \item O produtor ainda pode tentar inserir um item
+    quando o buffer estiver \textbf{cheio}.
+
+    \item O consumidor ainda pode tentar retirar um item
+    quando o buffer estiver \textbf{vazio}.
+\end{itemize}
+
+\vspace{0.4cm}
+
+\begin{alertblock}{Conclusão}
+\textbf{Exclusão mútua não é suficiente!}
+
+Além de controlar o acesso concorrente,
+precisamos \textbf{coordenar a execução} das threads
+de acordo com o estado do buffer.
+\end{alertblock}
+
+\end{frame}
+
+% ============================================================
+% SLIDE 23 - COMO GARANTIR EXCLUSAO MUTUA?
+% ============================================================
+
+\begin{frame}{Taxonomia das Soluções de Exclusão Mútua}
+\small
+\begin{block}{Critério 1: Como a thread espera?}
+\begin{itemize}
+\item \textbf{Espera ocupada (busy waiting):} repete testes usando CPU.
+\item \textbf{Espera com bloqueio:} suspende a execução até poder prosseguir.
+\end{itemize}
+\end{block}
+\vspace{0.1cm}
+\begin{block}{Critério 2: Qual é o mecanismo empregado?}
+\begin{itemize}
+\item \textbf{Algoritmos clássicos por software:} alternância estrita e Peterson.
+\item \textbf{Primitivas atômicas:} Test-and-Set, Compare-and-Swap.
+\item \textbf{Abstrações de biblioteca/SO:} mutexes e outras primitivas.
+\end{itemize}
+\end{block}
+\begin{alertblock}{Atenção}
+Os dois critérios são \textbf{independentes}: um mutex pode usar
+operações atômicas e, dependendo da implementação, bloquear a thread.
+\end{alertblock}
+\end{frame}
+
+
+% ============================================================
+% SLIDE 24 - PRIMEIRA TENTATIVA
+% ============================================================
+
+\begin{frame}[fragile]{Primeira Tentativa: Variável de Controle}
+
+Considere uma variável compartilhada:
+
+\begin{block}{Pseudocódigo}
+
+\begin{verbatim}
+int ocupado = 0;
+while (ocupado == 1);
+ocupado = 1;
+/* Regiao critica */
+ocupado = 0;
+\end{verbatim}
+
+\end{block}
+
+\vspace{0.3cm}
+
+\begin{itemize}
+    \item \texttt{ocupado = 0}: região crítica livre.
+
+    \item \texttt{ocupado = 1}: região crítica ocupada.
+
+    \item A thread espera enquanto a região estiver ocupada.
+\end{itemize}
+
+\vspace{0.3cm}
+
+\begin{alertblock}{Pergunta}
+Essa solução realmente garante exclusão mútua?
+\end{alertblock}
+
+\end{frame}
+
+
+% ============================================================
+% SLIDE 25 - FALHA DA PRIMEIRA TENTATIVA
+% ============================================================
+
+\begin{frame}{Por Que a Primeira Tentativa Falha?}
+
+Suponha inicialmente:
+
+\[
+ocupado = 0
+\]
+
+\begin{center}
+\small
+\begin{tabular}{c|l|l}
+\hline
+Passo & Thread 1 & Thread 2 \\
+\hline
+1 & Lê ocupado = 0 & \\
+2 & & Lê ocupado = 0 \\
+3 & ocupado = 1 & \\
+4 & & ocupado = 1 \\
+5 & Entra na região crítica & \\
+6 & & Entra na região crítica \\
+\hline
+\end{tabular}
+\end{center}
+
+\vspace{0.4cm}
+
+\begin{alertblock}{Falha}
+As duas threads entram na região crítica!
+
+A verificação e a atualização da variável
+\texttt{ocupado} não formam uma operação atômica.
+\end{alertblock}
+
+\end{frame}
+
+
+
+\begin{frame}[fragile]{Espera Ocupada (Busy Waiting)}
+\begin{block}{Definição}
+A thread verifica repetidamente uma condição para tentar entrar
+na região crítica, sem se bloquear voluntariamente.
+\end{block}
+\begin{exampleblock}{Exemplo conceitual}
+\begin{verbatim}
+while (ocupado)
+    ;  /* continua testando */
+\end{verbatim}
+\end{exampleblock}
+\begin{itemize}
+\item Consome tempo de CPU durante a espera.
+\item Aparece na primeira tentativa, na alternância estrita,
+      em Peterson e nos spinlocks.
+\item \textbf{Não implica, por si só, incorreção:} Peterson é correto
+      sob as hipóteses do modelo teórico.
+\end{itemize}
+\end{frame}
+
+% ============================================================
+% SLIDE 26 - REQUISITOS DE UMA SOLUCAO
+% ============================================================
+
+\begin{frame}{Requisitos de uma Solução Correta}
+
+Uma solução clássica para o problema da região
+crítica deve satisfazer três propriedades.
+
+\vspace{0.3cm}
+
+\begin{block}{1. Exclusão Mútua}
+No máximo uma thread pode executar
+a região crítica em determinado instante.
+\end{block}
+
+\begin{block}{2. Progresso}
+Se nenhuma thread está na região crítica,
+a escolha de quem entrará não pode ser
+adiada indefinidamente pelas threads
+que não desejam entrar.
+\end{block}
+
+\begin{block}{3. Espera Limitada}
+Após uma thread solicitar entrada,
+deve existir um limite para o número de
+entradas das outras threads antes dela.
+\end{block}
+
+\end{frame}
+
+
+% ============================================================
+% SLIDE 27 - ALTERNANCIA ESTRITA
+% ============================================================
+
+\begin{frame}[fragile]{Segunda Tentativa: Alternância Estrita}
+
+Considere duas threads identificadas por
+\texttt{0} e \texttt{1}.
+
+\begin{block}{Variável compartilhada}
+
+\begin{verbatim}
+int vez = 0;
+\end{verbatim}
+
+\end{block}
+
+\begin{columns}[T]
+
+\begin{column}{0.48\textwidth}
+
+\textbf{Thread 0}
+
+\begin{verbatim}
+while (vez != 0);
+/* Regiao critica */
+vez = 1;
+\end{verbatim}
+
+\end{column}
+
+\begin{column}{0.48\textwidth}
+
+\textbf{Thread 1}
+
+\begin{verbatim}
+while (vez != 1);
+/* Regiao critica */
+vez = 0;
+\end{verbatim}
+
+\end{column}
+
+\end{columns}
+
+\vspace{0.4cm}
+
+\begin{block}{Ideia}
+As threads recebem permissão para entrar
+na região crítica alternadamente, com \textbf{espera ocupada}.
+\end{block}
+
+\end{frame}
+
+
+% ============================================================
+% SLIDE 28 - PROBLEMA DA ALTERNANCIA ESTRITA
+% ============================================================
+
+\begin{frame}{O Problema da Alternância Estrita}
+
+Suponha que:
+
+\[
+vez = 0
+\]
+
+\begin{enumerate}
+    \setlength{\itemsep}{0.3cm}
+
+    \item A Thread 0 entra na região crítica.
+
+    \item Ao sair, executa \texttt{vez = 1}.
+
+    \item A Thread 1 não deseja entrar
+          na região crítica.
+
+    \item A Thread 0 tenta entrar novamente.
+
+    \item A Thread 0 permanece esperando,
+          pois \texttt{vez = 1}.
+\end{enumerate}
+
+\vspace{0.3cm}
+
+\begin{alertblock}{Problema}
+A Thread 0 fica impedida de entrar,
+mesmo com a região crítica livre.
+\end{alertblock}
+
+\vspace{0.2cm}
+
+A solução garante exclusão mútua,
+mas não satisfaz o requisito de progresso.
+
+\end{frame}
+
+
+% ============================================================
+% SLIDE 29 - ALGORITMO DE PETERSON
+% ============================================================
+
+\begin{frame}[fragile]{Algoritmo de Peterson}
+
+O algoritmo de Peterson utiliza duas informações:
+
+\begin{itemize}
+    \item Se uma thread deseja entrar na região crítica;
+
+    \item Qual thread recebe prioridade em caso
+          de disputa.
+\end{itemize}
+
+\vspace{0.3cm}
+
+\begin{block}{Variáveis compartilhadas}
+
+\begin{verbatim}
+bool interesse[2] = {false, false};
+
+int vez = 0;
+\end{verbatim}
+
+\end{block}
+
+\vspace{0.3cm}
+
+\begin{itemize}
+    \item \texttt{interesse[i]} indica que a thread
+          \texttt{i} deseja entrar.
+
+    \item \texttt{vez} é utilizada para resolver
+          a disputa quando ambas desejam entrar.
+\end{itemize}
+
+\end{frame}
+
+
+% ============================================================
+% SLIDE 30 - CODIGO DO ALGORITMO DE PETERSON
+% ============================================================
+
+\begin{frame}[fragile]{Algoritmo de Peterson: Pseudocódigo}
+\small
+Para a thread \texttt{i}, com \(j=1-i\):
+\begin{block}{Algoritmo teórico}
+\begin{verbatim}
+interesse[i] = true;
+vez = j;
+while (interesse[j] && vez == j)
+    ;
+/* Regiao critica */
+interesse[i] = false;
+\end{verbatim}
+\end{block}
+\begin{itemize}
+\item A thread anuncia seu interesse e cede prioridade à outra.
+\item O laço \texttt{while} é uma forma de \textbf{espera ocupada}.
+\item Ao sair, a thread retira seu interesse.
+\end{itemize}
+\end{frame}
+
+
+% ============================================================
+% SLIDE 31 - POR QUE PETERSON FUNCIONA?
+% ============================================================
+
+\begin{frame}{Por Que Peterson Funciona?}
+
+Considere duas threads tentando entrar
+simultaneamente.
+
+\vspace{0.3cm}
+
+\begin{enumerate}
+    \setlength{\itemsep}{0.3cm}
+
+    \item Ambas indicam interesse em entrar.
+
+    \item Ambas atualizam a variável \texttt{vez}.
+
+    \item A última atualização determina
+          qual thread deverá ceder prioridade.
+
+    \item Uma thread entra na região crítica.
+
+    \item A outra aguarda até que a primeira
+          retire seu interesse.
+\end{enumerate}
+
+\vspace{0.3cm}
+
+\begin{block}{Resultado}
+No modelo clássico de memória sequencialmente
+consistente, Peterson satisfaz exclusão mútua,
+progresso e espera limitada para duas threads.
+\end{block}
+
+\vspace{0.2cm}
+
+\end{frame}
+
+% ============================================================
+% OPENMP 1 - DAS SOLUCOES CLASSICAS AO OPENMP
+% ============================================================
+
+\begin{frame}{Das Soluções Clássicas ao OpenMP}
+
+O algoritmo de Peterson demonstra como garantir
+exclusão mútua utilizando variáveis compartilhadas.
+
+\vspace{0.3cm}
+
+\textbf{Entretanto, sua utilização prática apresenta limitações:}
+
+\begin{itemize}
+    \setlength{\itemsep}{0.2cm}
+    \item A versão estudada funciona com duas threads.
+    \item Utiliza espera ocupada.
+    \item Depende de garantias de atomicidade e ordenação.
+    \item Exige implementar o protocolo de sincronização.
+\end{itemize}
+
+\vspace{0.3cm}
+
+\begin{alertblock}{Pergunta}
+Precisamos implementar algoritmos como Peterson
+sempre que quisermos proteger uma região crítica?
+\end{alertblock}
+
+
+\end{frame}
+
+
+% ============================================================
+% OPENMP 2 - O QUE E OPENMP?
+% ============================================================
+
+\begin{frame}{Introdução ao OpenMP}
+
+\begin{block}{Definição}
+\textbf{OpenMP} é uma API para programação paralela
+em memória compartilhada, utilizada com C, C++
+e Fortran.
+\end{block}
+
+\vspace{0.3cm}
+
+\textbf{Características:}
+
+\begin{itemize}
+    \setlength{\itemsep}{0.2cm}
+    \item Permite criar regiões de execução paralela.
+    \item Utiliza threads que compartilham memória.
+    \item Oferece diretivas para distribuir trabalho.
+    \item Disponibiliza mecanismos de sincronização.
+\end{itemize}
+
+\vspace{0.3cm}
+
+\begin{block}{Diretivas}
+Em C, as diretivas OpenMP são introduzidas por
+\texttt{\#pragma omp}.
+\end{block}
+
+\end{frame}
+
+
+% ============================================================
+% OPENMP 3 - PRIMEIRO PROGRAMA
+% ============================================================
+
+\begin{frame}[fragile]{OpenMP: Primeiro Programa}
+
+\small
+\begin{verbatim}
+#include <stdio.h>
+#include <omp.h>
+int main(void)
+{
+    #pragma omp parallel num_threads(4)
+    {
+        int id = omp_get_thread_num();
+        printf("Thread %d\n", id);
+    }
+    return 0;
+}
+\end{verbatim}
+
+\vspace{0.2cm}
+
+\begin{block}{Compilação e execução}
+\texttt{gcc -fopenmp exemplo.c -o exemplo}
+
+\texttt{./exemplo}
+\end{block}
+
+\begin{itemize}
+    \item \texttt{parallel}: cria uma região paralela.
+    \item \texttt{num\_threads(4)}: solicita quatro threads.
+    \item \texttt{omp\_get\_thread\_num()}: identifica a thread.
+\end{itemize}
+
+\end{frame}
+
+
+% ============================================================
+% OPENMP 4 - EXECUCAO PARALELA
+% ============================================================
+
+\begin{frame}[fragile]{Como as Threads Executam?}
+
+\begin{block}{Uma possível saída}
+\small
+\begin{verbatim}
+Thread 0
+Thread 2
+Thread 1
+Thread 3
+\end{verbatim}
+\end{block}
+
+\vspace{0.3cm}
+
+\begin{itemize}
+    \setlength{\itemsep}{0.25cm}
+    \item Todas as threads executam o bloco
+          delimitado pela região \texttt{parallel}.
+    \item A ordem das mensagens não é determinada.
+    \item As threads podem executar simultaneamente
+          em diferentes núcleos.
+\end{itemize}
+
+\vspace{0.3cm}
+
+\begin{alertblock}{Importante}
+A existência de múltiplas threads não garante
+uma ordem específica de execução.
+\end{alertblock}
+
+\end{frame}
+
+
+% ============================================================
+% OPENMP 5 - VARIAVEIS COMPARTILHADAS
+% ============================================================
+
+\begin{frame}[fragile]{Variáveis Compartilhadas e Privadas}
+
+\small
+\begin{verbatim}
+int compartilhada = 0;
+#pragma omp parallel num_threads(4)
+{
+    int privada = omp_get_thread_num();
+    #pragma omp critical
+    {
+        compartilhada++;
+    }
+}
+\end{verbatim}
+
+\vspace{0.3cm}
+
+\begin{block}{Variável compartilhada}
+\texttt{compartilhada} é acessada pelas quatro threads.
+\end{block}
+
+\begin{block}{Variável privada}
+Cada thread possui sua própria variável local
+\texttt{privada}.
+\end{block}
+
+
+\end{frame}
+
+
+% ============================================================
+% OPENMP 6 - CONDICAO DE CORRIDA
+% ============================================================
+
+\begin{frame}[fragile]{Condição de Corrida com OpenMP}
+
+Considere o seguinte programa:
+
+\small
+\begin{verbatim}
+long contador = 0;
+#pragma omp parallel for num_threads(4)
+for (int i = 0; i < 1000000; i++) {
+    contador++;
+}
+printf("Contador = %ld\n", contador);
+\end{verbatim}
+
+\vspace{0.3cm}
+
+\textbf{Resultado esperado:}
+
+\[
+contador = 1.000.000
+\]
+
+\begin{alertblock}{Problema}
+As quatro threads modificam a mesma variável
+\texttt{contador} sem sincronização.
+
+A operação \texttt{contador++} não é atômica.
+\end{alertblock}
+
+\end{frame}
+
+
+% ============================================================
+% OPENMP 7 - CRITICAL
+% ============================================================
+
+\begin{frame}[fragile]{OpenMP: Diretiva Critical}
+
+A diretiva \texttt{critical} permite proteger
+uma região crítica.
+
+\small
+\begin{verbatim}
+long contador = 0;
+#pragma omp parallel for num_threads(4)
+for (int i = 0; i < 1000000; i++) {
+    #pragma omp critical
+    {
+        contador++;
+    }
+}
+\end{verbatim}
+
+\vspace{0.3cm}
+
+\begin{block}{Funcionamento}
+Apenas uma thread por vez pode executar
+a região \texttt{critical} correspondente.
+\end{block}
+
+\begin{alertblock}{Resultado}
+O incremento passa a ser protegido por
+exclusão mútua.
+\end{alertblock}
+
+\end{frame}
+
+
+% ============================================================
+% OPENMP 8 - COMO CRITICAL FUNCIONA?
+% ============================================================
+
+\begin{frame}{Como Funciona a Diretiva Critical?}
+
+Considere quatro threads tentando executar
+a mesma região crítica.
+
+\vspace{0.3cm}
+
+\begin{center}
+\begin{tabular}{c|l}
+\hline
+\textbf{Thread} & \textbf{Situação} \\
+\hline
+Thread 0 & Executando a região crítica \\
+Thread 1 & Aguardando \\
+Thread 2 & Aguardando \\
+Thread 3 & Aguardando \\
+\hline
+\end{tabular}
+\end{center}
+
+\vspace{0.4cm}
+
+Quando a Thread 0 termina, outra thread
+pode entrar na região crítica.
+
+\vspace{0.3cm}
+
+\begin{block}{Propriedade garantida}
+No máximo uma thread executa a mesma
+região crítica protegida em determinado instante.
+\end{block}
+
+\begin{alertblock}{Observação}
+A diretiva não estabelece uma ordem específica
+para a entrada das threads.
+\end{alertblock}
+
+\end{frame}
+
+
+% ============================================================
+% OPENMP 9 - ATOMIC
+% ============================================================
+
+\begin{frame}[fragile]{OpenMP: Diretiva Atomic}
+
+Quando precisamos proteger uma atualização simples,
+podemos utilizar a diretiva \texttt{atomic}.
+
+\small
+\begin{verbatim}
+long contador = 0;
+#pragma omp parallel for num_threads(4)
+for (int i = 0; i < 1000000; i++) {
+    #pragma omp atomic
+    contador++;
+}
+\end{verbatim}
+
+\vspace{0.3cm}
+
+\begin{block}{Funcionamento}
+A diretiva garante a atomicidade da atualização
+de \texttt{contador} em relação a acessos
+atômicos compatíveis.
+\end{block}
+
+\begin{itemize}
+    \item É aplicável a operações específicas.
+    \item Pode ser mais eficiente que \texttt{critical}.
+    \item Não protege arbitrariamente um bloco de código.
+\end{itemize}
+
+\end{frame}
+
+
+% ============================================================
+% OPENMP 10 - REDUCTION
+% ============================================================
+
+\begin{frame}[fragile]{OpenMP: Diretiva Reduction}
+
+Outra possibilidade é evitar que todas as threads
+atualizem diretamente o mesmo contador.
+
+\small
+\begin{verbatim}
+long contador = 0;
+#pragma omp parallel for reduction(+:contador)
+for (int i = 0; i < 1000000; i++) {
+    contador++;
+}
+\end{verbatim}
+
+\vspace{0.3cm}
+
+\begin{block}{Funcionamento}
+Cada thread trabalha com uma cópia privada
+da variável de redução.
+
+Ao final, os resultados são combinados
+utilizando a operação especificada.
+\end{block}
+
+\begin{alertblock}{Diferença fundamental}
+A redução evita a disputa direta pelo contador
+durante as iterações, em vez de proteger
+cada incremento com exclusão mútua.
+\end{alertblock}
+
+\end{frame}
+
+
+% ============================================================
+% OPENMP 11 - COMPARACAO DAS SOLUCOES
+% ============================================================
+
+\begin{frame}{Comparando as Soluções em OpenMP}
+
+\small
+\begin{center}
+\begin{tabular}{p{2.0cm}|p{3.3cm}|p{4.0cm}}
+\hline
+\textbf{Solução} &
+\textbf{Funcionamento} &
+\textbf{Aplicação} \\
+\hline
+\texttt{critical} &
+Exclusão mútua entre regiões correspondentes &
+Proteção de blocos de código \\
+\hline
+\texttt{atomic} &
+Atomicidade de operações específicas &
+Atualizações simples de variáveis \\
+\hline
+\texttt{reduction} &
+Cópias privadas e combinação dos resultados &
+Somas, contagens e outras reduções \\
+\hline
+\end{tabular}
+\end{center}
+
+\vspace{0.4cm}
+
+\begin{block}{Conclusão}
+Nem toda sincronização precisa ser implementada
+por meio de uma região crítica explícita.
+
+A escolha do mecanismo depende da operação
+e dos requisitos do programa.
+\end{block}
+
+\end{frame}
+
+
+
+% ============================================================
+% PARTE 2 — SEMÁFOROS E PROBLEMAS CLÁSSICOS
+% ============================================================
+\section{Semáforos POSIX e problemas clássicos}
+\begin{frame}{Da exclusão mútua à coordenação}
+\begin{block}{Retomando o produtor-consumidor}
+Proteger o acesso ao buffer evita interferências, mas não basta:
+\begin{itemize}
+\item o produtor precisa aguardar quando não há espaço;
+\item o consumidor precisa aguardar quando não há itens.
+\end{itemize}
+\end{block}
+\vspace{0.2cm}
+\begin{alertblock}{Nova questão}
+Como uma thread pode \textbf{esperar por uma condição} sem consultar a memória continuamente?
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Semáforo: conceito}
+\begin{block}{Definição}
+Um \textbf{semáforo} é uma abstração de sincronização com um contador interno e operações atômicas de espera e sinalização.
+\end{block}
+\begin{itemize}
+\item \textbf{wait(S)} (ou \textbf{P}/\textbf{down}): obtém uma permissão; caso não esteja disponível, aguarda.
+\item \textbf{signal(S)} (ou \textbf{V}/\textbf{up}): devolve uma permissão e pode despertar uma thread.
+\end{itemize}
+\vspace{0.2cm}
+\begin{alertblock}{Observação}
+No modelo com bloqueio, aguardar não exige executar continuamente o teste; detalhes dependem da implementação.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Semáforo binário e semáforo contador}
+\begin{columns}[T,onlytextwidth]
+\column{0.49\textwidth}
+\begin{block}{Binário}
+\begin{itemize}
+\item Valores lógicos: 0 ou 1.
+\item Pode controlar acesso exclusivo.
+\item Não se confunde integralmente com um mutex: não possui necessariamente a noção de \emph{proprietário}.
+\end{itemize}
+\end{block}
+\column{0.49\textwidth}
+\begin{block}{Contador}
+\begin{itemize}
+\item Representa várias permissões.
+\item Ex.: cinco posições livres no buffer.
+\item Uma espera consome uma permissão; um sinal a repõe.
+\end{itemize}
+\end{block}
+\end{columns}
+\vspace{0.3cm}
+\centering\textbf{Exclusão mútua e coordenação usam a mesma abstração, com propósitos diferentes.}
+\end{frame}
+
+\begin{frame}{Operações de semáforo: pseudocódigo}
+\begin{block}{Semáforo inicializado com $S = k$}
+\ttfamily\small
+wait(S): obter uma permissão; se indisponível, aguardar\\[0.18cm]
+signal(S): devolver uma permissão; liberar eventual espera
+\end{block}
+\vspace{0.25cm}
+\begin{itemize}
+\item \textbf{Atomicidade:} duas threads não podem consumir a mesma permissão.
+\item \textbf{Contagem:} o valor inicial representa recursos/permissões disponíveis.
+\item \textbf{Ordem:} o semáforo não impõe, em geral, FIFO ou ausência de inanição.
+\end{itemize}
+\begin{alertblock}{Importante}
+A implementação interna de \texttt{wait}/\texttt{signal} não é um simples \texttt{if} seguido de incremento/decremento comum.
+\end{alertblock}
+\end{frame}
+
+
+
+\section{Problemas clássicos}
+
+\begin{frame}{Semáforos POSIX com threads OpenMP}
+\begin{block}{Duas APIs com papéis diferentes}
+\textbf{OpenMP} cria e organiza as threads; \textbf{POSIX} fornece os semáforos \texttt{sem\_t} para controlar o acesso aos recursos.
+\end{block}
+\begin{itemize}
+\item \texttt{sem\_init}: inicializa o semáforo.
+\item \texttt{sem\_wait}: obtém permissão ou aguarda.
+\item \texttt{sem\_post}: libera uma permissão.
+\item \texttt{sem\_destroy}: destrói o semáforo.
+\end{itemize}
+\begin{alertblock}{Atenção}
+O semáforo é compartilhado pelas threads do mesmo processo. O parâmetro \texttt{pshared=0} indica esse uso entre threads.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}[fragile]{OpenMP + semáforo POSIX: exclusão mútua}
+\small
+\begin{verbatim}
+sem_t mutex;
+long contador = 0;
+sem_init(&mutex, 0, 1);
+#pragma omp parallel for num_threads(4)
+for (int i = 0; i < 100000; ++i) {
+    sem_wait(&mutex);
+    contador++;
+    sem_post(&mutex);
+}
+sem_destroy(&mutex);
+\end{verbatim}
+\vspace{0.1cm}
+\begin{block}{Ponto central}
+Inicializar com \texttt{1} permite apenas uma thread por vez na região crítica. O código completo está em \texttt{exemplos/}.
+\end{block}
+\end{frame}
+
+\begin{frame}{Do semáforo binário ao contador}
+\begin{block}{Semáforo binário: exclusão mútua}
+\texttt{mutex = 1}: restringe o número de threads que entram na região protegida.
+\end{block}
+\begin{block}{Semáforos contadores: coordenação}
+No produtor-consumidor com buffer de tamanho $N$:
+\begin{itemize}
+\item \texttt{vazios = N}: número inicial de vagas.
+\item \texttt{cheios = 0}: número inicial de itens prontos.
+\end{itemize}
+\end{block}
+\begin{alertblock}{Por que precisamos dos três?}
+\texttt{vazios} e \texttt{cheios} coordenam a produção e o consumo; \texttt{mutex} protege as operações na estrutura compartilhada.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}[fragile]{OpenMP + POSIX: produtor-consumidor}
+\small
+\begin{columns}[T,onlytextwidth]
+\column{0.49\textwidth}
+\begin{block}{Produtor}
+\ttfamily\scriptsize
+produzir(item);\\
+sem\_wait(\&vazios);\\
+sem\_wait(\&mutex);\\
+inserir(item);\\
+sem\_post(\&mutex);\\
+sem\_post(\&cheios);
+\end{block}
+\column{0.49\textwidth}
+\begin{block}{Consumidor}
+\ttfamily\scriptsize
+sem\_wait(\&cheios);\\
+sem\_wait(\&mutex);\\
+item = retirar();\\
+sem\_post(\&mutex);\\
+sem\_post(\&vazios);\\
+consumir(item);
+\end{block}
+\end{columns}
+\vspace{0.18cm}
+\begin{block}{Execução}
+\texttt{\#pragma omp parallel sections} cria as duas tarefas concorrentes. Código integral disponível no projeto.
+\end{block}
+\end{frame}
+
+\begin{frame}{Experimentos com OpenMP + POSIX}
+\begin{enumerate}
+\setlength\itemsep{0.25cm}
+\item Execute a contagem com quatro threads e semáforo binário inicializado com 1.
+\item Compare com uma versão sem proteção da atualização.
+\item Execute o produtor-consumidor com um buffer de cinco posições.
+\item Inverta as velocidades relativas do produtor e consumidor.
+\end{enumerate}
+\vspace{0.2cm}
+\begin{alertblock}{Questão}
+Por que a correção do contador precisa de exclusão mútua, enquanto o buffer limitado também precisa de coordenação?
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Quatro problemas clássicos de sincronização}
+\begin{enumerate}
+\setlength\itemsep{0.22cm}
+\item \textbf{Produtor-consumidor}: controlar espaços e itens em um buffer limitado.
+\item \textbf{Leitores-escritores}: permitir leituras concorrentes sem conflito com escrita.
+\item \textbf{Filósofos jantando}: evitar impasse na aquisição de múltiplos recursos.
+\item \textbf{Barbeiro dorminhoco}: organizar clientes, cadeiras e atendimento.
+\end{enumerate}
+\vspace{0.2cm}
+\begin{alertblock}{Pergunta para todos os casos}
+Quais são os recursos, quais condições precisam valer e qual é o risco de sincronização incorreta?
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Produtor-consumidor: invariantes do buffer}
+\begin{block}{Buffer de capacidade $N$}
+\begin{itemize}
+\item $0\leq itens\leq N$.
+\item Produzir requer uma \textbf{posição livre}.
+\item Consumir requer um \textbf{item disponível}.
+\item Alterações nos índices e nas posições precisam preservar a consistência.
+\end{itemize}
+\end{block}
+\vspace{0.25cm}
+\begin{center}
+\begin{tikzpicture}
+\foreach \x/\v in {0/12,1/13,2/14,3/--,4/--}{\node[draw=azulcefet,fill=azulclaro,minimum width=1.22cm,minimum height=.8cm] at (1.42*\x,0){\v};}
+\node[above=0.27cm] at (2.8,0.45) {\small 3 ocupadas; 2 livres};
+\end{tikzpicture}
+\end{center}
+\end{frame}
+
+\begin{frame}[fragile]{Produtor-consumidor: solução com semáforos}
+\small
+Inicialização: \texttt{vazios = N}, \texttt{cheios = 0}, \texttt{mutex = 1}.
+\vspace{0.15cm}
+\begin{columns}[T,onlytextwidth]
+\column{0.48\textwidth}
+\begin{block}{Produtor}
+\ttfamily\scriptsize
+produzir(item);\\
+wait(vazios);\\
+wait(mutex);\\
+inserir(item);\\
+signal(mutex);\\
+signal(cheios);
+\end{block}
+\column{0.48\textwidth}
+\begin{block}{Consumidor}
+\ttfamily\scriptsize
+wait(cheios);\\
+wait(mutex);\\
+item = retirar();\\
+signal(mutex);\\
+signal(vazios);\\
+consumir(item);
+\end{block}
+\end{columns}
+\vspace{0.17cm}
+\begin{alertblock}{Por que esta ordem?}
+Aguardar por espaço ou item \textbf{antes} de adquirir o mutex evita segurá-lo durante uma espera por condição.
+\end{alertblock}
+\end{frame}
+
+
+
+\begin{frame}{Leitores e escritores: o problema}
+\begin{block}{Regras para um recurso compartilhado}
+\begin{itemize}
+\item Vários leitores podem acessar \textbf{simultaneamente}.
+\item Um escritor precisa de acesso \textbf{exclusivo}.
+\item Leitor e escritor não podem acessar ao mesmo tempo quando há escrita.
+\end{itemize}
+\end{block}
+\vspace{0.3cm}
+\begin{center}
+\Large
+\textcolor{verdeprod}{L + L + L \;\checkmark}\qquad
+\textcolor{vermelhoerro}{L + E \;\(\times\)}\qquad
+\textcolor{vermelhoerro}{E + E \;\(\times\)}
+\end{center}
+\vspace{0.2cm}
+\begin{alertblock}{Questão de justiça}
+Se leitores chegarem continuamente, um escritor pode nunca conseguir acesso?
+\end{alertblock}
+\end{frame}
+
+\begin{frame}[fragile]{Leitores-escritores: semáforos (preferência aos leitores)}
+\small
+Inicialização: \texttt{mutex = 1}, \texttt{recurso = 1}, \texttt{nLeitores = 0}.
+\vspace{0.2cm}
+\begin{columns}[T,onlytextwidth]
+\column{0.54\textwidth}
+\begin{block}{Leitor}
+\ttfamily\scriptsize
+wait(mutex);\\
+nLeitores++;\\
+if (nLeitores == 1) wait(recurso);\\
+signal(mutex);\\
+ler();\\
+wait(mutex);\\
+nLeitores--;\\
+if (nLeitores == 0) signal(recurso);\\
+signal(mutex);
+\end{block}
+\column{0.43\textwidth}
+\begin{block}{Escritor}
+\ttfamily\scriptsize
+wait(recurso);\\
+escrever();\\
+signal(recurso);
+\end{block}
+\begin{alertblock}{Limitação}
+Pode haver \textbf{inanição de escritores}.
+\end{alertblock}
+\end{columns}
+\end{frame}
+
+
+
+\begin{frame}{Filósofos jantando: o problema}
+\begin{block}{Cenário}
+Cinco filósofos alternam entre pensar e comer. Cada um precisa adquirir \textbf{dois garfos vizinhos} para comer.
+\end{block}
+\begin{itemize}
+\item Cada garfo só pode estar com um filósofo por vez.
+\item Se todos pegarem o garfo à esquerda e aguardarem o da direita, ninguém progride.
+\end{itemize}
+\vspace{0.15cm}
+\begin{alertblock}{Conceito central}
+\textbf{Deadlock (impasse):} ciclo de espera por recursos que impede o progresso dos participantes.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}[fragile]{Filósofos: solução conceitual com semáforos}
+\small
+Cinco semáforos binários \texttt{garfo[0..4] = 1} e um semáforo contador \texttt{sala = 4}.
+\vspace{0.2cm}
+\begin{block}{Filósofo $i$ (pseudocódigo)}
+\ttfamily\small
+pensar();\\
+wait(sala);\\
+wait(garfo[i]);\\
+wait(garfo[(i+1) \% 5]);\\
+comer();\\
+signal(garfo[(i+1) \% 5]);\\
+signal(garfo[i]);\\
+signal(sala);
+\end{block}
+\begin{alertblock}{Garantia e limite}
+Restringir a quatro filósofos disputando garfos \textbf{evita o deadlock circular clássico}; não garante, por si só, ausência de inanição.
+\end{alertblock}
+\end{frame}
+
+
+
+\begin{frame}{Barbeiro dorminhoco: o problema}
+\begin{block}{Barbearia}
+Há um barbeiro, uma cadeira de atendimento e $N$ cadeiras na sala de espera.
+\end{block}
+\begin{itemize}
+\item Sem clientes, o barbeiro dorme.
+\item Ao chegar, um cliente acorda o barbeiro ou espera, se houver cadeira.
+\item Se todas as cadeiras estiverem ocupadas, o cliente vai embora.
+\end{itemize}
+\vspace{0.2cm}
+\begin{alertblock}{Desafio}
+Evitar perda de avisos de chegada, excesso de clientes na sala e conflitos na contagem de cadeiras.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}[fragile]{Barbeiro: solução conceitual com semáforos}
+\small
+Inicialização: \texttt{clientes = 0}, \texttt{barbeiro = 0}, \texttt{mutex = 1}, \texttt{esperando = 0}.
+\vspace{0.15cm}
+\begin{columns}[T,onlytextwidth]
+\column{0.48\textwidth}
+\begin{block}{Cliente}
+\ttfamily\scriptsize
+wait(mutex);\\
+if (esperando == N) \{\\
+\quad signal(mutex); sair();\\
+\} else \{\\
+\quad esperando++;\\
+\quad signal(clientes);\\
+\quad signal(mutex);\\
+\quad wait(barbeiro);\\
+\quad receber\_corte();\\
+\}
+\end{block}
+\column{0.49\textwidth}
+\begin{block}{Barbeiro}
+\ttfamily\scriptsize
+while (true) \{\\
+\quad wait(clientes);\\
+\quad wait(mutex);\\
+\quad esperando--;\\
+\quad signal(barbeiro);\\
+\quad signal(mutex);\\
+\quad cortar\_cabelo();\\
+\}
+\end{block}
+\end{columns}
+\vspace{0.05cm}
+{\scriptsize Protocolo didático: o sinal libera um cliente para atendimento; conclusão e saída podem exigir um aperto de mãos adicional.}
+\end{frame}
+
+
+
+\begin{frame}{Comparando os problemas clássicos}
+\footnotesize
+\begin{tabular}{p{2.35cm}p{3.6cm}p{3.85cm}}
+\toprule
+\textbf{Problema} & \textbf{Condição de avanço} & \textbf{Risco central}\\
+\midrule
+Produtor-consumidor & Espaço para produzir; item para consumir & Sobrescrita / leitura inválida\\
+Leitores-escritores & Escrita exclusiva; leitura compartilhada & Inanição por política de prioridade\\
+Filósofos & Dois recursos vizinhos disponíveis & Deadlock e inanição\\
+Barbeiro & Cliente presente; cadeira de espera livre & Perda de coordenação / capacidade\\
+\bottomrule
+\end{tabular}
+\vspace{0.3cm}
+\begin{block}{Síntese}
+Sincronização combina \textbf{segurança} (não violar invariantes) e \textbf{vivacidade} (permitir progresso).
+\end{block}
+\end{frame}
+
+\begin{frame}{Para discutir em sala}
+\begin{enumerate}
+\setlength\itemsep{0.35cm}
+\item Por que o mutex sozinho não resolve o produtor-consumidor?
+\item Por que a preferência a leitores pode prejudicar escritores?
+\item Evitar deadlock garante que ninguém espere indefinidamente?
+\item No barbeiro, o que distingue \textbf{ser chamado} de \textbf{terminar o corte}?
+\end{enumerate}
+\vspace{0.2cm}
+\begin{alertblock}{Próxima etapa}
+Implementar e testar protocolos de sincronização, investigando também políticas de justiça e desempenho.
+\end{alertblock}
+\end{frame}
+
+
+% ============================================================
+% EXEMPLOS PRATICOS ADICIONAIS (OPENMP + POSIX)
+% ============================================================
+\begin{frame}{Exemplos executáveis: quatro problemas clássicos}
+\small
+\begin{tabular}{p{3.15cm}p{6.2cm}}
+\toprule
+\textbf{Programa} & \textbf{Semáforos e propósito}\\
+\midrule
+Produtor--consumidor & \texttt{vazios}, \texttt{cheios}, \texttt{mutex}: recursos e exclusão\\
+Leitores--escritores & \texttt{recurso}, \texttt{mutex\_contagem}: leitores simultâneos\\
+Filósofos & \texttt{garfos[5]}, \texttt{sala}: evitar espera circular\\
+Barbeiro & \texttt{chegadas}, \texttt{mutex}, sinais individuais\\
+\bottomrule
+\end{tabular}
+\vspace{0.3cm}
+\begin{block}{Como os programas foram organizados?}
+OpenMP cria as threads; semáforos POSIX controlam quem pode prosseguir.
+\end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Leitores e escritores: como compartilhar a leitura?}
+\small
+\begin{block}{Entrada de um leitor}
+\ttfamily\footnotesize
+sem\_wait(\&mutex\_contagem);\\
+leitores\_ativos++;\\
+if (leitores\_ativos == 1) sem\_wait(\&recurso);\\
+sem\_post(\&mutex\_contagem);
+\end{block}
+\begin{block}{Escritor}
+\ttfamily\footnotesize
+sem\_wait(\&recurso);\\
+dado = novo\_valor;\\
+sem\_post(\&recurso);
+\end{block}
+\begin{alertblock}{Pergunta}
+Por que somente o primeiro leitor bloqueia o escritor? Uma sequência contínua de leitores pode causar inanição do escritor.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}[fragile]{Filósofos: por que limitar a sala?}
+\small
+\begin{block}{Filósofo $i$}
+\ttfamily\footnotesize
+sem\_wait(\&sala);\\
+sem\_wait(\&garfos[i]);\\
+sem\_wait(\&garfos[(i+1)\%5]);\\
+comer();\\
+sem\_post(\&garfos[(i+1)\%5]);\\
+sem\_post(\&garfos[i]);\\
+sem\_post(\&sala);
+\end{block}
+\begin{block}{Inicialização}
+Cinco garfos com valor 1; semáforo \texttt{sala} com valor 4.
+\end{block}
+\begin{alertblock}{Questão}
+Por que permitir no máximo quatro filósofos impede o deadlock circular clássico, mas não garante ausência de inanição?
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Barbeiro dorminhoco: eventos e capacidade}
+\small
+\begin{itemize}
+\item \texttt{mutex = 1}: protege a fila e o número de cadeiras ocupadas.
+\item \texttt{chegadas = 0}: conta clientes aguardando chamada.
+\item \texttt{chamado[id] = 0}: acorda o cliente correto.
+\item \texttt{concluido[id] = 0}: sinaliza que o corte terminou.
+\end{itemize}
+\vspace{0.2cm}
+\begin{block}{Fluxo}
+Cliente entra na fila $\rightarrow$ sinaliza chegada $\rightarrow$ espera chamada $\rightarrow$ espera conclusão.
+\end{block}
+\begin{alertblock}{Questão}
+Por que um único sinal de ``barbeiro disponível'' pode não identificar qual cliente será atendido?
+\end{alertblock}
+\end{frame}
+
+
+% ============================================================
+% APLICACOES REAIS DOS QUATRO PROBLEMAS CLASSICOS
+% ============================================================
+\begin{frame}{Onde aparecem os problemas clássicos?}
+\small
+\begin{block}{Os mesmos padrões aparecem em sistemas reais}
+\begin{itemize}
+\item \textbf{Produtor--consumidor:} filas de impressão, streaming e processamento de requisições.
+\item \textbf{Leitores--escritores:} caches compartilhados, bancos de dados e sistemas de arquivos.
+\item \textbf{Filósofos jantando:} transações e threads que precisam adquirir vários recursos.
+\item \textbf{Barbeiro dorminhoco:} servidores com fila limitada e serviços que aguardam solicitações.
+\end{itemize}
+\end{block}
+\begin{alertblock}{Ideia}
+Os personagens mudam, mas os desafios continuam: concorrência, coordenação e acesso seguro a recursos.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Produtor--consumidor em sistemas reais}
+\small
+\begin{block}{Exemplo 1: fila de impressão}
+Aplicações enviam documentos (produtores); um serviço de impressão retira e processa trabalhos (consumidor).
+\end{block}
+\begin{block}{Exemplo 2: streaming de vídeo}
+Uma thread recebe dados da rede; outra os decodifica. Um buffer absorve diferenças momentâneas de velocidade.
+\end{block}
+\begin{block}{Exemplo 3: servidor com workers}
+Uma thread recebe requisições e outras retiram tarefas de uma fila limitada.
+\end{block}
+\begin{alertblock}{Pergunta}
+Se a fila estiver cheia, o que acontece com a thread produtora na nossa solução?
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Leitores--escritores em sistemas reais}
+\small
+\begin{block}{Exemplo 1: cache compartilhado}
+Muitas threads consultam dados em paralelo; atualizações exigem coordenação com as leituras.
+\end{block}
+\begin{block}{Exemplo 2: banco de dados}
+Consultas e alterações concorrentes precisam preservar a consistência dos dados.
+\end{block}
+\begin{block}{Exemplo 3: metadados de arquivos}
+Várias threads consultam informações; modificações precisam ser sincronizadas.
+\end{block}
+\begin{alertblock}{Atenção}
+Bancos de dados e sistemas de arquivos reais podem usar técnicas mais sofisticadas, como MVCC e bloqueios por granularidade.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Filósofos jantando em sistemas reais}
+\small
+\begin{block}{Exemplo 1: transferência entre contas}
+Uma transação bloqueia a conta A e espera B; outra bloqueia B e espera A. Pode ocorrer \textbf{deadlock}.
+\end{block}
+\begin{block}{Exemplo 2: aquisição de múltiplos mutexes}
+Thread 1 adquire \texttt{mutex1} antes de \texttt{mutex2}; thread 2 faz o contrário.
+\end{block}
+\begin{block}{Estratégia prática}
+Estabelecer uma \textbf{ordem global de aquisição} dos recursos evita a formação de espera circular.
+\end{block}
+\begin{alertblock}{Pergunta}
+Por que todas as threads adquirirem os mutexes na mesma ordem ajuda a evitar deadlock?
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Barbeiro dorminhoco em sistemas reais}
+\small
+\begin{block}{Exemplo 1: servidor com fila limitada}
+Uma thread atende requisições; outras aguardam em fila. Se a fila estiver cheia, novas solicitações podem ser rejeitadas.
+\end{block}
+\begin{block}{Exemplo 2: processamento de tarefas}
+Um worker aguarda trabalho sem consumir CPU continuamente. Uma chegada sinaliza que existe tarefa disponível.
+\end{block}
+\begin{block}{Mapeamento da analogia}
+Barbeiro = worker; clientes = solicitações; cadeiras = capacidade da fila; corte = processamento.
+\end{block}
+\begin{alertblock}{Pergunta}
+Quando a fila está cheia, o sistema deve bloquear a chegada ou rejeitar o pedido?
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Produtor--consumidor vs.\ barbeiro dorminhoco}
+\small
+\begin{tabular}{p{3.25cm}p{3cm}p{3cm}}
+\toprule
+\textbf{Aspecto} & \textbf{Produtor--consumidor} & \textbf{Barbeiro}\\
+\midrule
+Fila/buffer limitado & Sim & Sim\\
+Quando não há trabalho & Consumidor aguarda & Barbeiro dorme\\
+Quando a fila enche & Produtor aguarda & Cliente pode ir embora\\
+Principal ênfase & Disponibilidade de itens e vagas & Eventos de atendimento e capacidade\\
+\bottomrule
+\end{tabular}
+\vspace{0.3cm}
+\begin{block}{Discussão}
+Bloquear a solicitação e rejeitá-la são duas políticas possíveis de controle de sobrecarga.
+\end{block}
+\end{frame}
+
+\begin{frame}{Síntese: um mesmo servidor pode reunir os quatro}
+\small
+\begin{enumerate}
+\setlength\itemsep{0.22cm}
+\item \textbf{Produtor--consumidor:} requisições entram em uma fila e são processadas por workers.
+\item \textbf{Leitores--escritores:} requisições consultam ou atualizam um cache compartilhado.
+\item \textbf{Filósofos:} algumas operações exigem vários locks e podem gerar deadlock.
+\item \textbf{Barbeiro:} ao atingir a capacidade da fila, o servidor pode rejeitar novas solicitações.
+\end{enumerate}
+\begin{alertblock}{Questão para a turma}
+Quais desses padrões poderiam ocorrer simultaneamente em um único servidor web?
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Atividade de observação dos programas}
+\small
+\begin{enumerate}
+\setlength\itemsep{0.23cm}
+\item Compile os cinco programas com \texttt{make} na pasta \texttt{exemplos}.
+\item Execute cada programa pelo menos três vezes.
+\item Compare a ordem das mensagens e o estado dos recursos.
+\item Identifique o semáforo que protege dados e o que coordena eventos.
+\item Discuta deadlock, inanição e limitações de justiça de cada política.
+\end{enumerate}
+\begin{block}{Discussão}
+O resultado correto depende da sincronização; a ordem exata de execução pode variar.
+\end{block}
+\end{frame}
+
+% =====================================================
+% CONTINUACAO NATURAL: MECANISMOS DE SINCRONIZACAO
+% =====================================================
+\begin{frame}{Continuando: como escolher um mecanismo de sincronização?}
+\small
+\begin{block}{O que já sabemos}
+Condições de corrida, regiões críticas, Peterson, OpenMP, semáforos e problemas clássicos.
+\end{block}
+\begin{block}{O que vamos investigar agora}
+\begin{itemize}
+\item Como as operações \textbf{atômicas} podem implementar locks?
+\item Em que \textbf{mutex}, \textbf{barreira} e \textbf{semáforo} diferem?
+\item Como \textbf{monitores} organizam exclusão mútua e espera por condições?
+\item Como dois \textbf{processos independentes} sincronizam o acesso à memória?
+\end{itemize}
+\end{block}
+\begin{alertblock}{Limite desta aula}
+Deadlock aparece como motivação; seus algoritmos de prevenção, evitação e detecção serão estudados em aula específica.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}[fragile]{Uma inversão perigosa no produtor--consumidor}
+\small
+\begin{columns}[T]
+\column{.48\textwidth}
+\begin{block}{Ordem correta: produtor}
+\begin{verbatim}
+sem_wait(&vazios);
+sem_wait(&mutex);
+buffer[entrada] = item;
+entrada = (entrada+1)%CAP;
+sem_post(&mutex);
+sem_post(&cheios);
+\end{verbatim}
+\end{block}
+\column{.48\textwidth}
+\begin{alertblock}{Ordem incorreta}
+\begin{verbatim}
+sem_wait(&mutex);
+sem_wait(&vazios);
+buffer[entrada] = item;
+entrada = (entrada+1)%CAP;
+sem_post(&mutex);
+sem_post(&cheios);
+\end{verbatim}
+\end{alertblock}
+\end{columns}
+\vspace{.2cm}
+\centering\textbf{A diferença está apenas na ordem de aquisição!}
+\end{frame}
+
+\begin{frame}{Como surge o impasse com buffer cheio?}
+\small
+\begin{enumerate}
+\item Buffer cheio: \(vazios=0\), \(cheios=CAP\), \(mutex=1\).
+\item Produtor adquire \texttt{mutex} e bloqueia em \texttt{vazios}.
+\item Consumidor consegue uma permissão de \texttt{cheios}, mas bloqueia em \texttt{mutex}.
+\item Consumidor não retira o item nem sinaliza \texttt{vazios}.
+\end{enumerate}
+\begin{alertblock}{Espera circular de dependências}
+Produtor espera por espaço que o consumidor criaria; consumidor espera pelo mutex mantido pelo produtor.
+\end{alertblock}
+\begin{block}{Importante}
+Os índices \texttt{entrada} e \texttt{saida} podem ser diferentes: o impasse decorre da \textbf{ordem dos semáforos}, não dos índices.
+\end{block}
+\end{frame}
+
+\begin{frame}{Por que o experimento precisa ser controlado?}
+\small
+\begin{itemize}
+\item Uma ordem errada \textbf{permite} deadlock, mas uma execução livre pode não encontrá-lo.
+\item Na demonstração, começamos com o buffer \textbf{cheio} e garantimos que o produtor alcance primeiro \texttt{sem\_wait(\&mutex)}.
+\item O programa defeituoso permanece bloqueado: não devemos esperar que ele encerre sozinho.
+\item Para a atividade, executar com \texttt{timeout} e comparar com a versão correta.
+\end{itemize}
+\begin{block}{Pergunta}
+Por que o consumidor não consegue liberar uma vaga se o produtor já está esperando por ela?
+\end{block}
+\end{frame}
+
+\begin{frame}{Das soluções por software ao suporte de hardware}
+\small
+\begin{block}{Relembrando Peterson}
+Funciona como modelo conceitual para duas threads sob hipóteses apropriadas de memória; implementá-lo com variáveis comuns em C moderno não é seguro.
+\end{block}
+\begin{block}{Primitivas atômicas}
+O processador fornece operações cujo efeito sobre uma posição de memória é indivisível perante operações concorrentes compatíveis.
+\end{block}
+\begin{itemize}
+\item \textbf{Test-and-Set:} lê o valor antigo e marca o lock, atomicamente.
+\item \textbf{Compare-and-Swap (CAS):} substitui somente se o valor observado for o esperado.
+\end{itemize}
+\begin{alertblock}{Aplicação}
+Construção de locks e estruturas concorrentes; atomicidade não implica, por si só, justiça.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}[fragile]{Spinlock: uma thread espera tentando novamente}
+\small
+\begin{block}{Pseudocódigo conceitual}
+\begin{verbatim}
+while (test_and_set(&ocupado)) {
+    // espera ocupada
+}
+// região crítica
+liberar_lock();
+\end{verbatim}
+\end{block}
+\begin{itemize}
+\item Se o lock estava livre, a operação atômica o marca como ocupado.
+\item Caso contrário, a thread repete a tentativa e consome tempo de CPU.
+\item Pode ser útil para esperas \textbf{muito curtas}; é ruim para esperas longas.
+\end{itemize}
+\begin{alertblock}{Atenção}
+\texttt{test\_and\_set} precisa ser uma operação atômica real; um \texttt{if} seguido de atribuição não é equivalente.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}[fragile]{Spinlock em C: operações atômicas}
+\small
+\begin{block}{Exemplo ilustrativo em C11}
+\begin{verbatim}
+atomic_flag lock = ATOMIC_FLAG_INIT;
+while (atomic_flag_test_and_set(&lock)) {
+    // espera ocupada
+}
+contador++;
+atomic_flag_clear(&lock);
+\end{verbatim}
+\end{block}
+\begin{itemize}
+\item \texttt{atomic\_flag\_test\_and\_set}: testa e marca de forma atômica.
+\item \texttt{atomic\_flag\_clear}: libera o lock.
+\item \texttt{contador++} fica protegido porque só uma thread possui o lock.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{CAS: outra primitiva fundamental}
+\small
+\begin{block}{Compare-and-Swap (conceitualmente)}
+\texttt{CAS(endereco, esperado, novo)} compara o valor atual com \emph{esperado}. Se forem iguais, grava \emph{novo}; tudo como operação atômica.
+\end{block}
+\begin{exampleblock}{Exemplo}
+Se \(x=0\), \texttt{CAS(x,0,1)} pode trocar \(x\) por 1. Se outra thread já escreveu 1, a tentativa não efetua essa troca.
+\end{exampleblock}
+\begin{itemize}
+\item Fundamental para implementar algoritmos de sincronização.
+\item Uma operação atômica não resolve automaticamente problemas como inanição ou deadlock.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Mutex: o que muda em relação ao semáforo?}
+\small
+\begin{tabular}{p{3cm}p{4.3cm}p{3cm}}
+\toprule
+ & \textbf{Mutex POSIX} & \textbf{Semáforo POSIX}\\
+\midrule
+Finalidade típica & Exclusão mútua & Permissões ou eventos\\
+Propriedade & Thread que adquire deve liberar & \texttt{sem\_post} pode vir de outra thread\\
+Operações & \texttt{pthread\_mutex\_lock/unlock} & \texttt{sem\_wait/post}\\
+Valor lógico & Estado bloqueado/livre & Contador de permissões\\
+\bottomrule
+\end{tabular}
+\vspace{.3cm}
+\begin{alertblock}{Cuidado}
+Semáforo POSIX inicializado com 1 não fica necessariamente restrito a 0 e 1 se forem executados \texttt{sem\_post} extras.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}[fragile]{Mutex POSIX com threads OpenMP}
+\small
+\begin{block}{Exemplo ilustrativo em C/OpenMP}
+\begin{verbatim}
+pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
+int contador = 0;
+#pragma omp parallel num_threads(4)
+{
+    for (int i = 0; i < 10000; ++i) {
+        pthread_mutex_lock(&m);
+        contador++;
+        pthread_mutex_unlock(&m);
+    }
+}
+printf("contador = %d\n", contador);
+\end{verbatim}
+\end{block}
+\begin{itemize}
+\item As threads são criadas pelo OpenMP; o mutex é fornecido pela biblioteca POSIX.
+\item Resultado esperado: \texttt{contador = 40000}.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Mutex, critical e semáforo: comparando}
+\small
+\begin{itemize}
+\item \textbf{\texttt{critical} do OpenMP}: uma região nomeada ou sem nome protegida pelo runtime OpenMP.
+\item \textbf{Mutex POSIX}: objeto explícito com operações \texttt{lock/unlock} e propriedade.
+\item \textbf{Semáforo POSIX}: contador que também serve para sinalizar eventos entre threads.
+\end{itemize}
+\begin{block}{Pergunta}
+Se uma thread precisa avisar \emph{outra} que um dado ficou disponível, qual desses mecanismos corresponde mais diretamente a uma notificação?
+\end{block}
+\end{frame}
+
+\begin{frame}{Barreira: outro tipo de sincronização}
+\small
+\begin{block}{Exclusão mútua}
+Impede acesso simultâneo indevido a um recurso.
+\end{block}
+\begin{block}{Barreira}
+Impede que uma thread prossiga para a \textbf{próxima fase} antes que todas as threads da equipe atinjam o mesmo ponto.
+\end{block}
+\begin{exampleblock}{Aplicações}
+Iterações de métodos numéricos, etapas de processamento paralelo, troca de dados entre fases.
+\end{exampleblock}
+\end{frame}
+
+\begin{frame}[fragile]{Barreira em OpenMP}
+\small
+\begin{block}{Exemplo ilustrativo em OpenMP}
+\begin{verbatim}
+#pragma omp parallel num_threads(4)
+{
+    int id = omp_get_thread_num();
+    printf("T%d concluiu fase 1\n", id);
+    #pragma omp barrier
+    printf("T%d iniciou fase 2\n", id);
+}
+\end{verbatim}
+\end{block}
+\begin{itemize}
+\item A ordem \emph{entre} as mensagens da fase 1 varia.
+\item Todas as mensagens da fase 1 aparecem antes de qualquer mensagem da fase 2 (na saída sincronizada deste exemplo).
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Barreiras: precauções}
+\small
+\begin{itemize}
+\item Todas as threads da equipe devem encontrar corretamente a barreira.
+\item Uma barreira em caminho executado apenas por parte das threads pode causar bloqueio ou comportamento inválido.
+\item OpenMP também possui \textbf{barreiras implícitas} ao fim de algumas construções, salvo quando se usa \texttt{nowait} onde permitido.
+\item Barreira \textbf{não substitui} a proteção de uma região crítica.
+\end{itemize}
+\begin{alertblock}{Questão}
+Se todas as threads chegam à fase 2 juntas, elas podem atualizar a mesma variável sem proteção?
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Por que introduzir monitores?}
+\small
+\begin{block}{Dificuldade com semáforos}
+A correção depende do protocolo seguido pelo programador: ordem de \texttt{wait}, \texttt{signal} e acesso aos dados.
+\end{block}
+\begin{block}{Ideia de monitor}
+Reunir \textbf{estado compartilhado} e \textbf{operações sincronizadas} em uma mesma abstração, com exclusão mútua na execução dessas operações.
+\end{block}
+\begin{alertblock}{Importante}
+Monitores estruturam a solução; não tornam automaticamente correto qualquer algoritmo de espera e sinalização.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Estrutura conceitual de um monitor}
+\small
+\begin{block}{Monitor Buffer}
+\begin{itemize}
+\item Estado interno: buffer, índices e quantidade de itens.
+\item Operações públicas: \texttt{produzir()} e \texttt{consumir()}.
+\item Exclusão mútua durante a execução dessas operações.
+\item Variáveis de condição: \texttt{naoCheio} e \texttt{naoVazio}.
+\end{itemize}
+\end{block}
+\begin{exampleblock}{Intuição}
+A thread solicita uma operação ao monitor; o estado compartilhado não deve ser alterado por caminhos externos que ignorem o protocolo.
+\end{exampleblock}
+\end{frame}
+
+\begin{frame}[fragile]{Java: exclusão mútua com synchronized}
+\small
+\begin{block}{Exemplo ilustrativo em Java}
+\begin{verbatim}
+class Contador {
+    private int valor = 0;
+    public synchronized void incrementar() {
+        valor++;
+    }
+    public synchronized int consultar() {
+        return valor;
+    }
+}
+\end{verbatim}
+\end{block}
+\begin{itemize}
+\item Métodos \texttt{synchronized} do \textbf{mesmo objeto} usam o monitor intrínseco desse objeto.
+\item Apenas uma thread pode possuir esse monitor de cada vez.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Variáveis de condição: esperar por mudanças}
+\small
+\begin{block}{Por que não basta sincronizar um método?}
+No buffer limitado, produzir exige \emph{espaço livre}; consumir exige \emph{item disponível}. Se a condição não vale, é preciso \textbf{aguardar sem impedir o trabalho da outra thread}.
+\end{block}
+\begin{itemize}
+\item Em Java, \texttt{wait()} libera o monitor do objeto e suspende a thread.
+\item \texttt{notify()} desperta uma thread aguardando naquele objeto.
+\item \texttt{notifyAll()} desperta todas; cada uma precisa readquirir o monitor.
+\end{itemize}
+\begin{alertblock}{Diferença importante}
+Ao contrário de um semáforo, uma notificação de condição não acumula permissões para o futuro.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Hoare e Mesa: quem executa após um sinal?}
+\small
+\begin{block}{Semântica de Hoare (modelo clássico)}
+Ao sinalizar, o controle do monitor é transferido imediatamente para a thread despertada, sob a disciplina do monitor.
+\end{block}
+\begin{block}{Semântica de Mesa (modelo usual)}
+A thread despertada fica apta a executar, mas precisa \textbf{readquirir o monitor}; outra thread pode alterar o estado antes disso.
+\end{block}
+\begin{alertblock}{Consequência prática}
+Em Java, sempre testar a condição em \texttt{while}, não presumir que o estado continua válido após \texttt{wait()}.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}[fragile]{Produtor--consumidor com monitor em Java}
+\scriptsize
+\begin{block}{Exemplo ilustrativo em Java}
+\begin{verbatim}
+class Buffer {
+    private int item;
+    private boolean cheio = false;
+    public synchronized void produzir(int x)
+            throws InterruptedException {
+        while (cheio) wait();
+        item = x;
+        cheio = true;
+        notifyAll();
+    }
+    public synchronized int consumir()
+            throws InterruptedException {
+        while (!cheio) wait();
+        int x = item;
+        cheio = false;
+        notifyAll();
+        return x;
+    }
+}
+\end{verbatim}
+\end{block}
+\end{frame}
+
+\begin{frame}{O que acontece quando o consumidor chega antes?}
+\small
+\begin{enumerate}
+\item Consumidor entra no método sincronizado e encontra \texttt{cheio = false}.
+\item Executa \texttt{wait()}: libera o monitor e aguarda.
+\item Produtor entra, deposita o item e chama \texttt{notifyAll()}.
+\item Consumidor desperta, \textbf{readquire o monitor}, verifica \texttt{while} e retira o item.
+\end{enumerate}
+\begin{block}{E se o produtor chegar antes?}
+Quando o consumidor entra, encontra \texttt{cheio = true}: não precisa esperar.
+\end{block}
+\end{frame}
+
+\begin{frame}{Por que while e não if?}
+\small
+\begin{itemize}
+\item Uma thread sinalizada precisa readquirir o monitor antes de continuar.
+\item Outra thread pode modificar a condição nesse intervalo.
+\item Podem ocorrer \emph{despertares espúrios}, mesmo sem uma notificação correspondente.
+\end{itemize}
+\begin{block}{Padrão seguro}
+\texttt{while (!condicao) wait();}
+\end{block}
+\begin{alertblock}{Cuidado com notify()}
+Se produtores e consumidores esperam no mesmo conjunto de espera, \texttt{notifyAll()} simplifica a correção do exemplo introdutório.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Monitor Java e API POSIX: correspondências}
+\footnotesize
+\begin{tabular}{p{3.5cm}p{3.4cm}p{3.2cm}}
+\toprule
+\textbf{Objetivo} & \textbf{Java} & \textbf{POSIX threads}\\
+\midrule
+Entrar em região exclusiva & \texttt{synchronized} & \texttt{pthread\_mutex\_lock}\\
+Esperar condição & \texttt{wait()} & \texttt{pthread\_cond\_wait}\\
+Sinalizar uma thread & \texttt{notify()} & \texttt{pthread\_cond\_signal}\\
+Sinalizar todas & \texttt{notifyAll()} & \texttt{pthread\_cond\_broadcast}\\
+\bottomrule
+\end{tabular}
+\vspace{.25cm}
+\begin{alertblock}{Não confundir}
+Java tem um monitor intrínseco em cada objeto; mutex + variável de condição POSIX permitem construir comportamento semelhante, mas não são uma construção \emph{monitor} da linguagem C.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Threads e processos: qual memória é compartilhada?}
+\small
+\begin{columns}[T]
+\column{.49\textwidth}
+\begin{block}{Threads do mesmo processo}
+Compartilham o espaço de endereçamento. Um objeto \texttt{sem\_t} comum pode ser acessado pelas threads.
+\end{block}
+\column{.49\textwidth}
+\begin{block}{Processos independentes}
+Possuem espaços de endereçamento distintos. Compartilhar uma variável exige um mecanismo explícito, como memória compartilhada POSIX.
+\end{block}
+\end{columns}
+\vspace{.3cm}
+\begin{alertblock}{Questão}
+Copiar o valor de uma variável de um processo para outro cria uma variável realmente compartilhada?
+\end{alertblock}
+\end{frame}
+
+\begin{frame}[fragile]{Compartilhamento entre processos: POSIX}
+\small
+\begin{block}{Memória compartilhada}
+\begin{verbatim}
+int fd = shm_open("/so_demo", O_CREAT|O_RDWR, 0600);
+ftruncate(fd, sizeof(Compartilhado));
+Compartilhado *p = mmap(NULL, sizeof(*p),
+    PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+\end{verbatim}
+\end{block}
+\begin{itemize}
+\item \texttt{shm\_open}: abre/cria objeto de memória compartilhada.
+\item \texttt{mmap(..., MAP\_SHARED, ...)}: mapeia a mesma região nos processos.
+\item \texttt{munmap}, \texttt{close}, \texttt{shm\_unlink}: liberam recursos.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Semáforo compartilhado entre processos}
+\small
+\begin{block}{Um semáforo dentro da memória compartilhada}
+\begin{verbatim}
+typedef struct {
+    sem_t mutex;
+    int contador;
+} Compartilhado;
+
+// Uma única inicialização, antes do uso concorrente:
+sem_init(&p->mutex, 1, 1);
+\end{verbatim}
+\end{block}
+\begin{itemize}
+\item \texttt{pshared = 1}: permite uso entre processos, quando suportado.
+\item \textbf{Não basta} usar 1: o objeto \texttt{sem\_t} deve estar em memória realmente compartilhada.
+\item Os processos devem coordenar inicialização, uso e destruição do semáforo.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Semáforos POSIX nomeados: alternativa}
+\small
+\begin{block}{Em vez de armazenar sem\_t no mapeamento}
+\texttt{sem\_open("/nome", ...)} abre um semáforo identificado por nome, acessível a processos independentes.
+\end{block}
+\begin{itemize}
+\item \texttt{sem\_wait} e \texttt{sem\_post} continuam sendo as operações de espera e sinalização.
+\item \texttt{sem\_close} fecha a referência do processo.
+\item \texttt{sem\_unlink} remove o nome quando ele não é mais necessário.
+\end{itemize}
+\begin{alertblock}{Distinção}
+O semáforo coordena o acesso; ele não substitui o mecanismo usado para compartilhar os \textbf{dados}.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Exemplo: dois processos incrementam o mesmo contador}
+\small
+\begin{enumerate}
+\item Um processo \textbf{inicializador} cria memória compartilhada com \texttt{contador=0} e \texttt{mutex} compartilhável.
+\item Dois processos independentes abrem o mesmo objeto e mapeiam a região.
+\item Cada processo repete: \texttt{sem\_wait}, incrementa contador, \texttt{sem\_post}.
+\item Depois de ambos terminarem, o contador deve refletir a soma dos incrementos.
+\end{enumerate}
+\begin{alertblock}{Ponto central}
+O escalonador pode intercalar os dois processos; o semáforo protege as atualizações do \textbf{mesmo objeto compartilhado}.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Justiça, inanição e escolha dos mecanismos}
+\small
+\begin{block}{O que um mecanismo garante?}
+\begin{itemize}
+\item \textbf{Exclusão mútua}: impede acessos simultâneos indevidos.
+\item \textbf{Progresso}: alguma operação pode avançar quando há condições.
+\item \textbf{Espera limitada}: ninguém é ultrapassado indefinidamente.
+\end{itemize}
+\end{block}
+\begin{itemize}
+\item Semáforos POSIX não garantem, em geral, uma política FIFO.
+\item A solução de leitores com prioridade pode causar inanição de escritores.
+\item A solução dos filósofos com \texttt{sala=4} evita o impasse circular, não toda inanição.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Síntese: qual mecanismo usar?}
+\scriptsize
+\begin{tabular}{p{2.8cm}p{6.9cm}}
+\toprule
+\textbf{Mecanismo} & \textbf{Quando é útil}\\
+\midrule
+Atômicas / CAS & Uma atualização curta e indivisível; base para locks.\\
+Spinlock & Espera ocupada potencialmente curta.\\
+Mutex & Proteger região crítica com propriedade.\\
+Semáforo & Controlar permissões e sinalizar eventos.\\
+Barreira & Sincronizar conclusão de fases de uma equipe.\\
+Monitor + condição & Encapsular estado e esperar por condições sobre ele.\\
+Memória compartilhada + semáforo & Coordenar processos com endereçamentos separados.\\
+\bottomrule
+\end{tabular}
+\vspace{.3cm}
+\begin{alertblock}{Pergunta final}
+Como decidir entre bloquear, esperar ativamente, sinalizar uma condição e sincronizar uma fase?
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Leituras recomendadas e atividade}
+\small
+\begin{itemize}
+\item \textbf{OSTEP}: cap. 28 (locks), 30 (variáveis de condição), 31 (semáforos); 32 (problemas de concorrência).
+\item \textbf{Tanenbaum e Bos, 4ª ed.}: cap. 2, seção 2.3 (sincronização e monitores).
+\item \textbf{Silberschatz, Galvin e Gagne, 10ª ed.}: cap. 6 (ferramentas) e 7 (exemplos de sincronização).
+\item \textbf{Referências de API}: documentação de OpenMP, \texttt{pthread}, POSIX \texttt{shm\_open} e \texttt{sem\_init}.
+\end{itemize}
+\begin{block}{Atividade após a aula}
+Comparar a versão correta e a versão bloqueante do buffer; executar spinlock, mutex, barreira, monitor Java e dois processos que compartilham um contador.
+\end{block}
+\end{frame}
+
+\end{document}
