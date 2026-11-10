@@ -1,0 +1,914 @@
+\documentclass[aspectratio=169,11pt]{beamer}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{lmodern}
+\usepackage{tikz}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{array}
+\usepackage{microtype}
+\usetikzlibrary{arrows.meta,positioning,calc}
+\definecolor{dkblue}{HTML}{15283F}
+\definecolor{teal}{HTML}{087E85}
+\definecolor{tealpale}{HTML}{DDF1EF}
+\definecolor{amberpale}{HTML}{FEF0D5}
+\definecolor{paper}{HTML}{FCFDFE}
+\definecolor{softgray}{HTML}{657488}
+\setbeamercolor{normal text}{fg=dkblue,bg=paper}
+\setbeamercolor{frametitle}{fg=white,bg=dkblue}
+\setbeamerfont{frametitle}{size=\large,series=\bfseries}
+\setbeamercolor{block title}{fg=white,bg=teal}
+\setbeamercolor{block body}{fg=dkblue,bg=tealpale!35}
+\setbeamercolor{note}{fg=dkblue,bg=tealpale}
+\setbeamercolor{demobox}{fg=white,bg=teal}
+\setbeamercolor{itemize item}{fg=teal}
+\setbeamercolor{enumerate item}{fg=teal}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{itemize item}{\color{teal}$\blacktriangleright$}
+\setbeamertemplate{itemize subitem}{\color{teal}$\bullet$}
+\setbeamertemplate{footline}{\leavevmode\hbox{\begin{beamercolorbox}[wd=.83\paperwidth,ht=3.2ex,dp=1.4ex,leftskip=1.0em]{normal text}\color{softgray}\scriptsize SISTEMAS OPERACIONAIS  /  PERSISTÊNCIA  •  AULAS 1 E 2\end{beamercolorbox}\begin{beamercolorbox}[wd=.17\paperwidth,ht=3.2ex,dp=1.4ex,rightskip=1em plus1fil]{normal text}\color{teal}\hfill\scriptsize\insertframenumber\ / \inserttotalframenumber\end{beamercolorbox}}}
+\setbeamertemplate{frametitle}{\nointerlineskip\begin{beamercolorbox}[wd=\paperwidth,ht=0.68cm,dp=0.15cm,leftskip=.7cm]{frametitle}\insertframetitle\end{beamercolorbox}}
+\setbeamersize{text margin left=0.75cm,text margin right=0.75cm}
+\setlength{\parskip}{5pt}
+\lstdefinestyle{code}{language=C,basicstyle=\ttfamily\small,keywordstyle=\color{teal}\bfseries,commentstyle=\color{softgray}\itshape,stringstyle=\color{orange!65!black},showstringspaces=false,breaklines=true,columns=fullflexible,frame=single,framesep=7pt,rulecolor=\color{teal!35},backgroundcolor=\color{gray!5},tabsize=4,xleftmargin=0pt}
+\lstdefinelanguage{bash}{morekeywords={make,cat,stat,ln,ls,mkdir,cp,pwd,findmnt,lsblk,df,du,wc},sensitive=true,morecomment=[l]{\#},morestring=[b]"}
+\lstset{style=code}
+\tikzset{box/.style={draw=dkblue,very thick,rounded corners=3pt,align=center,text width=2.5cm,minimum height=1.45cm,minimum width=2.6cm,inner sep=4pt}}
+\title{Persistência em Sistemas Operacionais}
+\begin{document}
+\begin{frame}
+\frametitle{Persistência em Sistemas Operacionais}
+
+\vspace{7mm}
+{\color{teal}\large SISTEMAS OPERACIONAIS}\par\vspace{3mm}
+{\fontsize{29}{34}\selectfont\bfseries Persistência: arquivos, discos e sistemas de arquivos}\par\vspace{5mm}
+{\large Teoria e demonstrações práticas em C}\par\vspace{7mm}
+{\normalsize Ciência da Computação, 2º período}\par
+{\small Universidade Federal de Ciência e Inovação do Rio de Janeiro (UFCIRJ)}\par
+{\small Prof. Frederico Luís Cabral}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Roteiro das aulas}
+\large
+\begin{itemize}
+\item \textbf{Aula 1:} persistência, E/S, HDDs/SSDs, arquivos, diretórios e interface POSIX.
+\item \textbf{Aula 2:} blocos, inodes, alocação, cache, \texttt{fsync()}, journaling e integridade.
+\item \textbf{Quatro programas C:} escrever/ler, \texttt{lseek}, metadados/links, \texttt{fsync}.
+\item \textbf{Princípio didático:} entender a operação, prever o resultado e conferir no terminal.
+\end{itemize}
+\vfill\begin{beamercolorbox}[wd=\textwidth,sep=2mm,rounded=true]{note}\small\textbf{Ideia-chave:} Não usamos slides das aulas anteriores: numeração e estrutura são novas.\end{beamercolorbox}
+\end{frame}
+
+\begin{frame}
+\frametitle{Do processo ao arquivo}
+\vspace{12mm}{\color{teal}\Large\bfseries AULA 1}\par\vspace{4mm}{\fontsize{25}{30}\selectfont\bfseries Do processo ao arquivo}\par\vspace{5mm}{\large Interfaces, dispositivos e a ideia de persistência.}\vfill{\color{lightgray}\rule{\textwidth}{1pt}}
+\end{frame}
+
+\begin{frame}
+\frametitle{Pergunta inicial: o que sobrevive?}
+{\large\textbf{Para discutir com a turma}}\par\medskip\begin{enumerate}\item Um programa cria uma variável \texttt{int x = 42;} e termina. Onde está o valor?
+\item O mesmo programa grava \texttt{42} em um arquivo e termina. O que muda?
+\item Que componentes participam do caminho entre \texttt{write()} e o armazenamento?
+\end{enumerate}\vfill\textcolor{teal}{\footnotesize Responda primeiro; confira no código ou no terminal em seguida.}
+\end{frame}
+
+\begin{frame}
+\frametitle{Persistência: definição operacional}
+\large
+\begin{itemize}
+\item Dados persistentes continuam disponíveis \textbf{após o encerramento do processo}.
+\item Memória RAM é volátil; SSD e HDD são dispositivos de armazenamento não volátil.
+\item O sistema operacional apresenta a abstração de \textbf{arquivos e diretórios}.
+\item Escrever um arquivo não implica, por si só, que os dados já estejam duravelmente registrados no dispositivo.
+\end{itemize}
+\vfill\begin{beamercolorbox}[wd=\textwidth,sep=2mm,rounded=true]{note}\small\textbf{Ideia-chave:} Persistência é diferente de duração da variável e de garantia imediata contra falhas de energia.\end{beamercolorbox}
+\end{frame}
+
+\begin{frame}
+\frametitle{RAM e armazenamento}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.48\textwidth}
+\begin{block}{Memória principal (RAM)}\small\begin{itemize}
+\item Acesso rápido e diretamente endereçável pela CPU.
+\item Guarda código, pilha, heap e caches.
+\item Perde o conteúdo quando não há alimentação elétrica.
+\end{itemize}\end{block}\end{column}
+\begin{column}{0.48\textwidth}
+\begin{block}{Armazenamento (SSD/HDD)}\small\begin{itemize}
+\item Acesso por dispositivos e controladores.
+\item Guarda arquivos, diretórios e metadados.
+\item Não depende de o processo continuar executando.
+\end{itemize}\end{block}\end{column}\end{columns}
+\vfill\begin{beamercolorbox}[wd=\textwidth,sep=2mm,rounded=true]{note}\small Um arquivo pode ser lido por diferentes processos, desde que haja permissões adequadas.\end{beamercolorbox}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{O caminho de uma chamada de escrita}
+\begin{center}\begin{tikzpicture}[>=stealth, every node/.style={font=\small}]
+
+\node[box, fill=tealpale] (p) at (0,0) {Processo em C\\\texttt{write(fd, buf, n)}};
+\node[box] (sys) at (3.6,0) {Chamada de sistema\\interface de arquivos};
+\node[box] (fs) at (7.2,0) {Kernel\\VFS + sistema de arquivos};
+\node[box, fill=amberpale] (dev) at (10.7,0) {Driver + controlador\\SSD / HDD};
+\draw[->,thick,teal] (p)--(sys);
+\draw[->,thick,teal] (sys)--(fs);
+\draw[->,thick,teal] (fs)--(dev);
+
+\end{tikzpicture}\end{center}
+\vfill\begin{beamercolorbox}[wd=\textwidth,sep=2mm,rounded=true]{note}\small O código da aplicação não precisa conhecer os endereços físicos dos blocos do disco.\end{beamercolorbox}
+\end{frame}
+
+\begin{frame}
+\frametitle{O que o sistema operacional abstrai?}
+\large
+\begin{itemize}
+\item \textbf{Dispositivo:} esconde comandos específicos de cada controlador.
+\item \textbf{Arquivo:} oferece uma sequência de bytes e uma interface uniforme.
+\item \textbf{Diretório:} associa nomes a arquivos e outros diretórios.
+\item \textbf{Descritor:} número usado pelo processo para acessar um arquivo aberto.
+\item \textbf{Permissões:} controlam quais operações são autorizadas.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Arquitetura simplificada de E/S}
+\large
+\begin{itemize}
+\item \textbf{Controlador:} recebe comandos do sistema operacional e opera o dispositivo.
+\item \textbf{Registradores:} expõem dados, estado e comandos (visão conceitual).
+\item \textbf{Driver:} traduz requisições genéricas em operações específicas.
+\item \textbf{Interrupção:} pode avisar à CPU que uma operação foi concluída.
+\item \textbf{DMA:} permite transferências entre dispositivo e memória com menor intervenção da CPU.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Polling e interrupções}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.48\textwidth}
+\begin{block}{Polling}\small\begin{itemize}
+\item A CPU consulta repetidamente o estado do dispositivo.
+\item Pode ser simples e útil quando a espera é muito curta.
+\item Pode desperdiçar ciclos aguardando conclusão.
+\end{itemize}\end{block}\end{column}
+\begin{column}{0.48\textwidth}
+\begin{block}{Interrupções}\small\begin{itemize}
+\item O dispositivo sinaliza eventos ao processador.
+\item A CPU pode executar outras tarefas enquanto espera.
+\item Há custo de tratamento da interrupção.
+\end{itemize}\end{block}\end{column}\end{columns}
+\vfill\begin{beamercolorbox}[wd=\textwidth,sep=2mm,rounded=true]{note}\small Na prática, sistemas podem combinar técnicas conforme o dispositivo e a carga.\end{beamercolorbox}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{DMA: por que faz diferença?}
+\large
+\begin{itemize}
+\item Sem DMA, a CPU pode precisar participar de transferências repetidas de dados.
+\item Com DMA, o controlador transfere blocos entre o dispositivo e a memória.
+\item A CPU continua responsável por configurar, coordenar e tratar a conclusão da operação.
+\item DMA não elimina drivers, interrupções, buffers ou outras responsabilidades do SO.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{HDD e SSD: mecanismos físicos}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.48\textwidth}
+\begin{block}{HDD}\small\begin{itemize}
+\item Pratos magnéticos e cabeçote mecânico.
+\item Latência de busca, rotação e transferência.
+\item Acesso aleatório geralmente mais caro.
+\end{itemize}\end{block}\end{column}
+\begin{column}{0.48\textwidth}
+\begin{block}{SSD}\small\begin{itemize}
+\item Memória flash, sem cabeçote mecânico.
+\item Acesso aleatório costuma ser muito mais rápido.
+\item Controlador realiza tradução e gerenciamento interno.
+\end{itemize}\end{block}\end{column}\end{columns}
+\vfill\begin{beamercolorbox}[wd=\textwidth,sep=2mm,rounded=true]{note}\small Os dois podem oferecer ao SO uma interface de blocos, apesar da implementação física distinta.\end{beamercolorbox}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Custos de acesso a um HDD}
+\large
+\begin{itemize}
+\item \textbf{Seek:} movimentação do cabeçote até a trilha.
+\item \textbf{Latência rotacional:} espera até que o setor passe sob o cabeçote.
+\item \textbf{Transferência:} leitura ou escrita dos bytes.
+\item A localização dos dados pode afetar muito o desempenho de operações pequenas.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Por que o SSD também precisa de gerenciamento?}
+\large
+\begin{itemize}
+\item Flash organiza dados em páginas; a eliminação ocorre em unidades maiores (blocos de apagamento).
+\item O controlador mantém uma camada de tradução de endereços, a FTL.
+\item Existe \textit{wear leveling}: distribuição das escritas para reduzir desgaste localizado.
+\item Desempenho de SSD não significa escrita instantânea nem ausência de falhas.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Teste rápido: E/S e armazenamento}
+{\large\textbf{Para discutir com a turma}}\par\medskip\begin{enumerate}\item Por que um HDD tende a penalizar mais acessos aleatórios do que um SSD?
+\item Qual é a função de um driver de dispositivo?
+\item Qual a diferença entre esperar por \textit{polling} e ser avisado por interrupção?
+\end{enumerate}\vfill\textcolor{teal}{\footnotesize Responda primeiro; confira no código ou no terminal em seguida.}
+\end{frame}
+
+\begin{frame}
+\frametitle{Arquivo: uma sequência de bytes}
+\large
+\begin{itemize}
+\item Para a interface POSIX, um arquivo regular pode ser visto como uma sequência de bytes.
+\item O sistema de arquivos associa a essa sequência tamanho, permissões e outros metadados.
+\item O nome do arquivo pertence à organização de diretórios; não é o conteúdo do arquivo.
+\item Dois processos podem abrir o mesmo arquivo em momentos diferentes.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Descritores de arquivos}
+\large
+\begin{itemize}
+\item \texttt{open()} retorna um inteiro: o \textbf{descritor de arquivo} do processo.
+\item Esse número referencia uma entrada mantida pelo sistema operacional.
+\item \texttt{read()}, \texttt{write()}, \texttt{lseek()} e \texttt{close()} operam sobre esse descritor.
+\item Por convenção, \texttt{0 = stdin}, \texttt{1 = stdout}, \texttt{2 = stderr}.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{O descritor não é o nome do arquivo}
+\begin{center}\begin{tikzpicture}[>=stealth, every node/.style={font=\small}]
+
+\node[box, fill=tealpale] (proc) at (0,0) {Processo\\\texttt{fd = 3}};
+\node[box] (tab) at (4.2,0) {Entrada de arquivo aberto\\posição + flags};
+\node[box, fill=amberpale] (ino) at (8.9,0) {Objeto no sistema de arquivos\\metadados + dados};
+\draw[->,very thick,teal] (proc)--(tab);
+\draw[->,very thick,teal] (tab)--(ino);
+
+\end{tikzpicture}\end{center}
+\vfill\begin{beamercolorbox}[wd=\textwidth,sep=2mm,rounded=true]{note}\small O número do descritor é válido no contexto do processo. O nome foi usado para localizar o arquivo na abertura.\end{beamercolorbox}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Principais chamadas POSIX}
+\begin{lstlisting}[language=C]
+int fd = open("registro.txt", O_RDONLY);
+if (fd == -1) { perror("open"); return 1; }
+
+char dados[128];
+ssize_t n = read(fd, dados, sizeof(dados));
+if (n < 0) perror("read");
+
+close(fd);
+\end{lstlisting}
+\vfill\small\textcolor{dkblue}{\texttt{read()} devolve o número de bytes lidos; zero indica fim do arquivo.}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Flags de abertura: decisões do processo}
+\large
+\begin{itemize}
+\item \texttt{O\_RDONLY}, \texttt{O\_WRONLY} ou \texttt{O\_RDWR}: modo de acesso.
+\item \texttt{O\_CREAT}: cria se o arquivo não existir (com modo de permissões).
+\item \texttt{O\_TRUNC}: zera o comprimento de um arquivo regular existente.
+\item \texttt{O\_APPEND}: cada escrita é posicionada no final do arquivo.
+\item A função \texttt{close()} libera o descritor; não substitui uma exigência de durabilidade por \texttt{fsync()}.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Código 01: gravar e ler em processos diferentes}
+\begin{lstlisting}[language=C]
+/* Trechos de 01_arquivo.c */
+fd = open("registro.txt", O_WRONLY | O_CREAT |
+          O_APPEND, 0644);
+write(fd, mensagem, sizeof(mensagem) - 1);
+close(fd);
+
+/* Em outra execucao do programa: */
+fd = open("registro.txt", O_RDONLY);
+while ((n = read(fd, buffer, sizeof(buffer))) > 0)
+    fwrite(buffer, 1, (size_t)n, stdout);
+close(fd);
+\end{lstlisting}
+\vfill\small\textcolor{dkblue}{O arquivo de código contém verificações de erro; estes são somente os trechos fundamentais.}
+
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Persistência após o término do processo}
+\begin{beamercolorbox}[wd=\textwidth,sep=3mm,rounded=true]{demobox}
+{\large\bfseries DEMONSTRACAO 01}\hfill{\normalsize Acompanhar no terminal}
+\end{beamercolorbox}
+\vspace{2mm}
+\textbf{Diretório:} {\ttfamily\small SO/05\_persistencia/exemplos}
+\vspace{1mm}
+\begin{lstlisting}[language=bash]
+make
+./01_arquivo gravar
+./01_arquivo ler
+./01_arquivo gravar
+./01_arquivo ler
+cat registro.txt
+\end{lstlisting}
+\begin{beamercolorbox}[wd=\textwidth,sep=2mm,rounded=true]{note}
+\small\textbf{Observar:} A segunda gravação acrescenta uma linha: o arquivo continua existindo após o primeiro processo terminar.
+\end{beamercolorbox}
+\end{frame}
+
+\begin{frame}
+\frametitle{Interprete a primeira demonstração}
+{\large\textbf{Para discutir com a turma}}\par\medskip\begin{enumerate}\item Por que executar \texttt{./01\_arquivo ler} em outro processo não apaga a informação?
+\item Por que a segunda execução de \texttt{gravar} não substitui a primeira linha?
+\item O conteúdo exibido após \texttt{write()} demonstra, sozinho, resistência a uma falha elétrica?
+\end{enumerate}\vfill\textcolor{teal}{\footnotesize Responda primeiro; confira no código ou no terminal em seguida.}
+\end{frame}
+
+\begin{frame}
+\frametitle{Posição de leitura/escrita: deslocamento}
+\large
+\begin{itemize}
+\item Um arquivo aberto possui uma posição corrente de leitura/escrita (\textit{offset}).
+\item \texttt{read()} e \texttt{write()} normalmente avançam essa posição.
+\item \texttt{lseek(fd, deslocamento, origem)} altera a posição.
+\item \texttt{SEEK\_SET} usa o início; \texttt{SEEK\_CUR}, a posição atual; \texttt{SEEK\_END}, o fim.
+\item \texttt{lseek()} muda a posição, \textbf{não lê nem escreve bytes}.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Código 02: substituindo um byte}
+\begin{lstlisting}[language=C]
+/* O arquivo recebe inicialmente "ABCDEFGHIJ". */
+write(fd, "ABCDEFGHIJ", 10);
+lseek(fd, 4, SEEK_SET);  /* indice 4 = quinta letra */
+write(fd, "x", 1);
+lseek(fd, 0, SEEK_SET);
+read(fd, buffer, 10);
+printf("%s\n", buffer);
+\end{lstlisting}
+\vfill\small\textcolor{dkblue}{Posições começam em zero. O \texttt{x} substitui \texttt{E}, não é inserido antes dele.}
+
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Controle da posição com lseek}
+\begin{beamercolorbox}[wd=\textwidth,sep=3mm,rounded=true]{demobox}
+{\large\bfseries DEMONSTRACAO 02}\hfill{\normalsize Acompanhar no terminal}
+\end{beamercolorbox}
+\vspace{2mm}
+\textbf{Diretório:} {\ttfamily\small SO/05\_persistencia/exemplos}
+\vspace{1mm}
+\begin{lstlisting}[language=bash]
+./02_lseek
+cat posicoes.txt
+wc -c posicoes.txt
+\end{lstlisting}
+\begin{beamercolorbox}[wd=\textwidth,sep=2mm,rounded=true]{note}
+\small\textbf{Observar:} Conteúdo esperado: \texttt{ABCDxFGHIJ}; o arquivo continua com dez bytes.
+\end{beamercolorbox}
+\end{frame}
+
+\begin{frame}
+\frametitle{Diretórios: nomes e hierarquia}
+\large
+\begin{itemize}
+\item Diretórios organizam nomes de arquivos e de outros diretórios.
+\item Caminho absoluto: começa na raiz (ex.: \texttt{/home/aluno/notas.txt}).
+\item Caminho relativo: interpretado a partir do diretório corrente.
+\item \texttt{.} indica o diretório atual; \texttt{..} indica o diretório pai.
+\item Diretórios têm representação e metadados próprios no sistema de arquivos.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Terminal: explorando diretórios e arquivos}
+\begin{lstlisting}[language=C]
+mkdir -p pasta_teste
+cp registro.txt pasta_teste/copia.txt
+pwd
+ls -l pasta_teste
+cat pasta_teste/copia.txt
+\end{lstlisting}
+\vfill\small\textcolor{dkblue}{Executar no diretório \texttt{exemplos}, após a demonstração 01.}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Permissões de arquivo e de diretório}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.48\textwidth}
+\begin{block}{Arquivo regular}\small\begin{itemize}
+\item \textbf{r:} ler conteúdo.
+\item \textbf{w:} modificar conteúdo, se outros controles permitirem.
+\item \textbf{x:} executar, quando aplicável.
+\end{itemize}\end{block}\end{column}
+\begin{column}{0.48\textwidth}
+\begin{block}{Diretório}\small\begin{itemize}
+\item \textbf{r:} listar entradas.
+\item \textbf{w:} alterar entradas (com condições).
+\item \textbf{x:} atravessar/buscar nomes.
+\end{itemize}\end{block}\end{column}\end{columns}
+\vfill\begin{beamercolorbox}[wd=\textwidth,sep=2mm,rounded=true]{note}\small As permissões se aplicam a usuário, grupo e outros; confira com \texttt{ls -l}.\end{beamercolorbox}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Fechamento da Aula 1}
+{\large\textbf{Para discutir com a turma}}\par\medskip\begin{enumerate}\item Explique o percurso simplificado \texttt{write()} $\rightarrow$ kernel $\rightarrow$ dispositivo.
+\item Como \texttt{open()}, \texttt{read()}, \texttt{write()} e \texttt{close()} se relacionam?
+\item Por que \texttt{lseek()} não é uma operação de inserção?
+\item Qual a diferença prática entre HDD e SSD para acessos aleatórios?
+\end{enumerate}\vfill\textcolor{teal}{\footnotesize Responda primeiro; confira no código ou no terminal em seguida.}
+\end{frame}
+
+\begin{frame}
+\frametitle{Por dentro do sistema de arquivos}
+\vspace{12mm}{\color{teal}\Large\bfseries AULA 2}\par\vspace{4mm}{\fontsize{25}{30}\selectfont\bfseries Por dentro do sistema de arquivos}\par\vspace{5mm}{\large Inodes, alocação, cache, falhas e recuperação.}\vfill{\color{lightgray}\rule{\textwidth}{1pt}}
+\end{frame}
+
+\begin{frame}
+\frametitle{Retomada da Aula 1}
+\large
+\begin{itemize}
+\item Vimos arquivos como sequência de bytes e diretórios como organização de nomes.
+\item O descritor de arquivo permite acesso por chamadas POSIX.
+\item \texttt{lseek()} altera a posição; \texttt{read()} e \texttt{write()} transferem dados.
+\item Agora veremos \textbf{como os bytes são organizados} e \textbf{o que ocorre em uma falha}.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Sistemas de arquivos: responsabilidades}
+\large
+\begin{itemize}
+\item Associar nomes a objetos persistentes.
+\item Organizar dados e metadados em estruturas de armazenamento.
+\item Gerenciar blocos livres e ocupados.
+\item Oferecer operações de leitura, escrita, criação e remoção.
+\item Buscar consistência e recuperação após falhas.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Uma visão simplificada de disco}
+\begin{center}\begin{tikzpicture}[>=stealth, every node/.style={font=\small}]
+
+\node[draw=dkblue,fill=tealpale,minimum width=2.5cm,minimum height=1.0cm] at (0,0) {Superbloco};
+\node[draw=dkblue,fill=amberpale,minimum width=2.3cm,minimum height=1.0cm] at (2.5,0) {Bitmaps};
+\node[draw=dkblue,fill=tealpale,minimum width=2.6cm,minimum height=1.0cm] at (5.0,0) {Inodes};
+\node[draw=dkblue,fill=gray!12,minimum width=4.1cm,minimum height=1.0cm] at (8.4,0) {Blocos de dados};
+\node at (5.1,-1.1) {Esquema didático: a disposição real depende do sistema de arquivos.};
+
+\end{tikzpicture}\end{center}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Bloco e metadados}
+\large
+\begin{itemize}
+\item \textbf{Bloco:} unidade lógica de alocação/armazenamento, por exemplo 4 KiB.
+\item \textbf{Superbloco:} descreve características e parâmetros do sistema de arquivos.
+\item \textbf{Bitmap:} informa quais unidades estão livres ou ocupadas.
+\item \textbf{Inode:} guarda metadados e informações para localizar o conteúdo.
+\item \textbf{Diretório:} relaciona nomes a objetos identificados por inodes.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Nome, inode e blocos}
+\begin{center}\begin{tikzpicture}[>=stealth, every node/.style={font=\small}]
+
+\node[box,fill=amberpale] (name) at (0,0) {Diretório\\\texttt{relatorio.txt} $\to$ inode 17};
+\node[box,fill=tealpale] (inode) at (4.8,0) {Inode 17\\tamanho, permissões\\endereços de dados};
+\node[draw=dkblue,fill=gray!10,minimum width=1.15cm,minimum height=.85cm] (b1) at (8.4,.65) {Bloco 7};
+\node[draw=dkblue,fill=gray!10,minimum width=1.15cm,minimum height=.85cm] (b2) at (10.2,.65) {Bloco 9};
+\node[draw=dkblue,fill=gray!10,minimum width=1.15cm,minimum height=.85cm] (b3) at (9.3,-.65) {Bloco 12};
+\draw[->,thick,teal] (name)--(inode);
+\draw[->,thick,teal] (inode.east) to[bend left] (b1.west);
+\draw[->,thick,teal] (inode.east) to[bend left] (b2.west);
+\draw[->,thick,teal] (inode.east) to[bend right] (b3.west);
+
+\end{tikzpicture}\end{center}
+\vfill\begin{beamercolorbox}[wd=\textwidth,sep=2mm,rounded=true]{note}\small O nome está em um diretório; os dados do arquivo não ficam armazenados dentro do nome.\end{beamercolorbox}
+\end{frame}
+
+\begin{frame}
+\frametitle{O que guarda um inode?}
+\large
+\begin{itemize}
+\item Identificador do proprietário e grupo; permissões.
+\item Tamanho do arquivo e tempos registrados pelo sistema de arquivos.
+\item Quantidade de links físicos associados ao inode.
+\item Informações necessárias para localizar os blocos de dados.
+\item \textbf{Não guarda, em geral, o nome do arquivo}: esse vínculo pertence ao diretório.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Links físicos e simbólicos}
+\large
+\begin{itemize}
+\item \textbf{Hard link:} outra entrada de diretório para o mesmo inode no mesmo sistema de arquivos.
+\item \textbf{Link simbólico:} arquivo especial que contém um caminho para outro objeto.
+\item Links físicos compartilham conteúdo e inode; links simbólicos têm inode próprio.
+\item Remover um nome não apaga automaticamente os dados enquanto existirem outras referências relevantes.
+\item Um link simbólico pode ficar quebrado se o destino deixar de existir.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Código 03: stat e lstat}
+\begin{lstlisting}[language=C]
+/* Trechos de 03_metadados.c */
+struct stat info, destino;
+lstat(nome, &info);     /* examina o proprio caminho */
+stat(nome, &destino);   /* segue link simbolico */
+
+printf("inode do caminho: %llu\n",
+       (unsigned long long)info.st_ino);
+printf("inode do destino: %llu\n",
+       (unsigned long long)destino.st_ino);
+\end{lstlisting}
+\vfill\small\textcolor{dkblue}{O programa completo também mostra tipo, tamanho, permissões e número de links físicos.}
+
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Metadados, hard links e links simbólicos}
+\begin{beamercolorbox}[wd=\textwidth,sep=3mm,rounded=true]{demobox}
+{\large\bfseries DEMONSTRACAO 03}\hfill{\normalsize Acompanhar no terminal}
+\end{beamercolorbox}
+\vspace{2mm}
+\textbf{Diretório:} {\ttfamily\small SO/05\_persistencia/exemplos}
+\vspace{1mm}
+\begin{lstlisting}[language=bash]
+./01_arquivo gravar
+./03_metadados registro.txt
+ln -f registro.txt link_fisico.txt
+ln -sfn registro.txt link_simbolico.txt
+./03_metadados link_fisico.txt
+./03_metadados link_simbolico.txt
+ls -li registro.txt link_*.txt
+\end{lstlisting}
+\begin{beamercolorbox}[wd=\textwidth,sep=2mm,rounded=true]{note}
+\small\textbf{Observar:} \texttt{registro.txt} e \texttt{link\_fisico.txt} têm mesmo inode; o link simbólico tem inode próprio. Os comandos com 	exttt{-f} podem ser repetidos sem erro de arquivo existente.
+\end{beamercolorbox}
+\end{frame}
+
+\begin{frame}
+\frametitle{Interprete inodes e links}
+{\large\textbf{Para discutir com a turma}}\par\medskip\begin{enumerate}\item Um \textit{hard link} cria uma cópia independente dos bytes?
+\item O que muda no contador de links físicos após executar \texttt{ln}?
+\item Por que \texttt{stat()} e \texttt{lstat()} podem retornar inodes diferentes para o mesmo caminho?
+\end{enumerate}\vfill\textcolor{teal}{\footnotesize Responda primeiro; confira no código ou no terminal em seguida.}
+\end{frame}
+
+\begin{frame}
+\frametitle{Alocação e blocos livres}
+\large
+\begin{itemize}
+\item Um arquivo pequeno pode ocupar um bloco de dados mesmo que use poucos bytes.
+\item O sistema de arquivos precisa localizar espaço livre para novos blocos.
+\item Bitmaps e outras estruturas acompanham a ocupação.
+\item A alocação de dados e de metadados exige atualizações consistentes.
+\item Fragmentação e localidade influenciam o custo de leitura e escrita.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Leitura e escrita: passos essenciais}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.48\textwidth}
+\begin{block}{Leitura}\small\begin{itemize}
+\item Localizar o nome no diretório.
+\item Encontrar o inode e os blocos do arquivo.
+\item Consultar o cache; buscar blocos quando necessário.
+\item Copiar bytes para o processo.
+\end{itemize}\end{block}\end{column}
+\begin{column}{0.48\textwidth}
+\begin{block}{Escrita}\small\begin{itemize}
+\item Encontrar ou alocar blocos.
+\item Atualizar conteúdo e metadados.
+\item Registrar modificações no cache e programar E/S.
+\item Pedir sincronização quando a aplicação precisar de durabilidade.
+\end{itemize}\end{block}\end{column}\end{columns}
+\vfill\begin{beamercolorbox}[wd=\textwidth,sep=2mm,rounded=true]{note}\small As etapas são um modelo conceitual; implementações reais podem combinar e otimizar operações.\end{beamercolorbox}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Localidade e fragmentação}
+\large
+\begin{itemize}
+\item \textbf{Localidade espacial:} blocos próximos tendem a reduzir deslocamentos/consultas.
+\item \textbf{Localidade temporal:} dados acessados recentemente têm chance de ser reutilizados.
+\item Fragmentação pode espalhar partes de um arquivo em diferentes regiões.
+\item No HDD, localização física é especialmente relevante; em SSDs, outras políticas internas importam.
+\item O cache também altera o desempenho percebido pelo programa.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Page cache: por que existe?}
+\large
+\begin{itemize}
+\item O kernel pode guardar páginas de arquivos em RAM para acelerar acessos.
+\item \textbf{Leitura:} uma próxima leitura pode ser satisfeita a partir do cache.
+\item \textbf{Escrita:} páginas modificadas (\textit{dirty}) podem aguardar gravação posterior.
+\item O retorno de \texttt{write()} normalmente significa que os dados foram aceitos, não que chegaram à mídia.
+\item O comportamento depende do sistema de arquivos, da montagem e do dispositivo.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{write, cache e dispositivo}
+\begin{center}\begin{tikzpicture}[>=stealth, every node/.style={font=\small}]
+
+\node[box,fill=tealpale] (p) at (0,0) {Processo\\\texttt{write()}};
+\node[box,fill=amberpale] (cache) at (4.3,0) {Page cache\\páginas modificadas};
+\node[box] (ssd) at (8.8,0) {Sistema de arquivos\\+ dispositivo};
+\draw[->,ultra thick,teal] (p)-- (cache);
+\draw[->,ultra thick,orange!85!black] (cache)-- (ssd);
+
+\end{tikzpicture}\end{center}
+\vfill\begin{beamercolorbox}[wd=\textwidth,sep=2mm,rounded=true]{note}\small Uma chamada de escrita pode retornar antes de ocorrer a gravação física.\end{beamercolorbox}
+\end{frame}
+
+\begin{frame}
+\frametitle{write, close, fsync: papéis diferentes}
+\large
+\begin{itemize}
+\item \texttt{write(fd,...)}: solicita a escrita de bytes; retorna quantidade ou erro.
+\item \texttt{close(fd)}: fecha o descritor; não é sinônimo de sincronização durável.
+\item \texttt{fsync(fd)}: solicita que dados modificados e metadados relevantes sejam sincronizados.
+\item \texttt{fsync()} pode falhar e seu resultado deve ser verificado.
+\item Para durabilidade de criação/renomeação de nomes, pode ser preciso sincronizar também o diretório.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Código 04: usando fsync}
+\begin{lstlisting}[language=C]
+/* Trechos de 04_fsync.c */
+int fd = open("sincronizado.txt",
+              O_CREAT | O_WRONLY | O_APPEND, 0644);
+write(fd, texto, sizeof(texto) - 1);
+puts("1. write() concluido");
+fsync(fd);
+puts("2. fsync() concluido");
+close(fd);
+\end{lstlisting}
+\vfill\small\textcolor{dkblue}{O código completo testa os retornos de \texttt{open}, \texttt{write}, \texttt{fsync} e \texttt{close}.}
+
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Sincronização explícita com fsync}
+\begin{beamercolorbox}[wd=\textwidth,sep=3mm,rounded=true]{demobox}
+{\large\bfseries DEMONSTRACAO 04}\hfill{\normalsize Acompanhar no terminal}
+\end{beamercolorbox}
+\vspace{2mm}
+\textbf{Diretório:} {\ttfamily\small SO/05\_persistencia/exemplos}
+\vspace{1mm}
+\begin{lstlisting}[language=bash]
+./04_fsync
+cat sincronizado.txt
+./04_fsync
+wc -l sincronizado.txt
+\end{lstlisting}
+\begin{beamercolorbox}[wd=\textwidth,sep=2mm,rounded=true]{note}
+\small\textbf{Observar:} Compare a ordem das mensagens. O programa demonstra a chamada, mas não simula queda de energia nem prova durabilidade sob qualquer falha.
+\end{beamercolorbox}
+\end{frame}
+
+\begin{frame}
+\frametitle{A hipótese do fsync}
+{\large\textbf{Para discutir com a turma}}\par\medskip\begin{enumerate}\item Se \texttt{write()} retornou sucesso, os bytes necessariamente já estão gravados no SSD?
+\item Por que o resultado da demonstração não prova resistência a uma falta de energia?
+\item Qual a diferença entre persistir o conteúdo de um arquivo e persistir uma nova entrada de diretório?
+\end{enumerate}\vfill\textcolor{teal}{\footnotesize Responda primeiro; confira no código ou no terminal em seguida.}
+\end{frame}
+
+\begin{frame}
+\frametitle{Consistência após falhas: o problema}
+\large
+\begin{itemize}
+\item Uma operação lógica pode exigir atualizar vários blocos de metadados e de dados.
+\item Uma queda de energia pode ocorrer \textbf{entre duas dessas atualizações}.
+\item Exemplo: bloco marcado como ocupado, mas inode ainda sem referência a ele.
+\item O sistema de arquivos precisa evitar ou reparar inconsistências estruturais.
+\item Consistência dos metadados e durabilidade dos dados recentes são questões diferentes.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Experimento mental: criar um arquivo}
+{\large\textbf{Para discutir com a turma}}\par\medskip\begin{enumerate}\item O sistema precisa criar uma entrada de diretório e um inode. Se só uma atualização chegar ao disco, o que pode acontecer?
+\item Quais informações precisam concordar após uma falha?
+\item Por que atualizar estruturas \textbf{em etapas} cria um problema de consistência?
+\end{enumerate}\vfill\textcolor{teal}{\footnotesize Responda primeiro; confira no código ou no terminal em seguida.}
+\end{frame}
+
+\begin{frame}
+\frametitle{fsck: verificação e reparo}
+\large
+\begin{itemize}
+\item Ferramentas do tipo \texttt{fsck} procuram inconsistências na estrutura de sistemas de arquivos.
+\item Exemplos: blocos indevidamente compartilhados, contadores incorretos e referências inválidas.
+\item Alguns problemas podem ser reparados; outros podem envolver perda de informação.
+\item A verificação completa pode exigir tempo proporcional ao tamanho/estrutura do sistema de arquivos.
+\item \textbf{Não executar fsck de escrita} em partição montada em uso sem seguir as recomendações específicas.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Journaling: ideia principal}
+\large
+\begin{itemize}
+\item Antes de aplicar certas atualizações, o sistema registra uma transação em um \textbf{journal}.
+\item Após uma falha, o journal ajuda a identificar quais transações precisam ser recuperadas.
+\item Assim, o sistema procura manter estruturas do sistema de arquivos consistentes.
+\item O journal pode tratar metadados e dados de formas diferentes, segundo a implementação e o modo de operação.
+\item Journaling \textbf{não substitui} backups nem garante preservação de todo dado recente.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{O princípio de uma transação em journal}
+\begin{center}\begin{tikzpicture}[>=stealth, every node/.style={font=\small}]
+
+\node[box,fill=amberpale] (j) at (0,0) {1. Preparar registro\\da transação};
+\node[box,fill=tealpale] (c) at (4.2,0) {2. Registrar conclusão\\no journal};
+\node[box] (d) at (8.6,0) {3. Aplicar atualização\\às estruturas finais};
+\draw[->,thick,teal] (j)--(c);
+\draw[->,thick,teal] (c)--(d);
+
+\end{tikzpicture}\end{center}
+\vfill\begin{beamercolorbox}[wd=\textwidth,sep=2mm,rounded=true]{note}\small Esquema simplificado de escrita antecipada: detalhes variam entre sistemas e modos de journaling.\end{beamercolorbox}
+\end{frame}
+
+\begin{frame}
+\frametitle{Consistência não é sinônimo de backup}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.48\textwidth}
+\begin{block}{Journaling / fsck}\small\begin{itemize}
+\item Visam manter ou recuperar estruturas coerentes.
+\item Podem lidar com falhas e interrupções de atualizações.
+\item Não recuperam necessariamente dados apagados pelo usuário.
+\end{itemize}\end{block}\end{column}
+\begin{column}{0.48\textwidth}
+\begin{block}{Backup}\small\begin{itemize}
+\item Mantém cópias recuperáveis em outro local/meio.
+\item Ajuda diante de exclusão acidental, corrupção ou desastre.
+\item Exige política de versões, testes e proteção da cópia.
+\end{itemize}\end{block}\end{column}\end{columns}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{ext4: exemplo de sistema de arquivos do Linux}
+\large
+\begin{itemize}
+\item Utiliza inodes, diretórios e estruturas de alocação de blocos.
+\item Suporta journaling e extensões (\textit{extents}) para mapear blocos.
+\item Permite observar metadados com ferramentas usuais do Linux.
+\item Os detalhes reais de alocação e escrita dependem de versão, opções de montagem e estado do sistema.
+\item Nosso modelo de inode é conceitual; a implementação do ext4 possui detalhes adicionais.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Terminal: observar o sistema de arquivos}
+\begin{lstlisting}[language=C]
+findmnt -T .
+lsblk -f
+df -h .
+du -sh .
+stat registro.txt
+\end{lstlisting}
+\vfill\small\textcolor{dkblue}{Esses comandos consultam informações, sem modificar a partição. \texttt{df} e \texttt{du} medem coisas distintas.}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Integridade e proteção}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.48\textwidth}
+\begin{block}{Erros que podem ocorrer}\small\begin{itemize}
+\item Falhas de dispositivo e setores problemáticos.
+\item Corrupção silenciosa de dados.
+\item Erro humano e exclusão acidental.
+\item Perda de alimentação durante atualização.
+\end{itemize}\end{block}\end{column}
+\begin{column}{0.48\textwidth}
+\begin{block}{Mecanismos de defesa}\small\begin{itemize}
+\item Checksums e verificação de integridade.
+\item Redundância entre dispositivos.
+\item Backups e versões recuperáveis.
+\item Ferramentas de verificação e recuperação.
+\end{itemize}\end{block}\end{column}\end{columns}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{RAID: por que combinar discos?}
+\large
+\begin{itemize}
+\item \textbf{RAID 0:} distribui dados entre discos; melhora paralelismo, sem redundância.
+\item \textbf{RAID 1:} espelha dados; uma cópia pode atender em caso de falha da outra.
+\item \textbf{RAID 5:} distribui blocos e paridade; tolera a falha de um disco no arranjo usual.
+\item O resultado depende da configuração, do controlador/software e do modo de falha.
+\item \textbf{RAID não é backup}: exclusões e corrupções lógicas podem se propagar.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Comparação: três camadas de proteção}
+{\large\textbf{Para discutir com a turma}}\par\medskip\begin{enumerate}\item Journaling ajuda contra quais tipos de inconsistência?
+\item RAID 1 ajuda quando um disco falha. Ele restaura um arquivo que o usuário apagou?
+\item Qual medida ajuda a recuperar um arquivo excluído há duas semanas?
+\item Que papel \texttt{fsync()} desempenha para um programa que grava dados importantes?
+\end{enumerate}\vfill\textcolor{teal}{\footnotesize Responda primeiro; confira no código ou no terminal em seguida.}
+\end{frame}
+
+\begin{frame}
+\frametitle{Síntese final: persistência}
+\large
+\begin{itemize}
+\item \textbf{Interface:} descritores, \texttt{open}, \texttt{read}, \texttt{write}, \texttt{lseek}, \texttt{close}.
+\item \textbf{Estruturas:} diretórios, inodes, blocos e alocação.
+\item \textbf{Desempenho:} HDD/SSD, localidade e page cache.
+\item \textbf{Confiabilidade:} \texttt{fsync}, journaling, \texttt{fsck}, integridade e backup.
+\item \textbf{Ideia-chave:} abstrair dados persistentes envolve armazenamento, organização e recuperação.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Bibliografia e leitura orientada — OSTEP 1.10}
+\large
+\begin{itemize}
+\item \textbf{Cap. 36 — I/O Devices:} controladores, polling, interrupções e DMA.
+\item \textbf{Cap. 37 — Hard Disk Drives; cap. 44 — Flash-based SSDs:} dispositivos.
+\item \textbf{Cap. 39 — Files and Directories:} interface; \textbf{cap. 40 — File System Implementation:} estrutura.
+\item \textbf{Cap. 42 — FSCK and Journaling:} consistência; \textbf{cap. 38 — Redundant Disk Arrays (RAID)}.
+\item \textbf{Cap. 45 — Data Integrity and Protection:} integridade de dados.
+\end{itemize}
+\vfill\begin{beamercolorbox}[wd=\textwidth,sep=2mm,rounded=true]{note}\small\textbf{Ideia-chave:} Fonte: Arpaci-Dusseau e Arpaci-Dusseau, \textit{Operating Systems: Three Easy Pieces}, v. 1.10 (2023).\end{beamercolorbox}
+\end{frame}
+
+\begin{frame}
+\frametitle{Repositório e próximos passos}
+
+{\Large\textbf{Todos os arquivos desta aula:}}\par\medskip
+\texttt{SO/05\_persistencia/}\par\medskip
+\begin{itemize}
+\item \texttt{slides/apresentacao.tex} e \texttt{apresentacao.pdf}.
+\item \texttt{exemplos/01\_arquivo.c}, \texttt{02\_lseek.c}, \texttt{03\_metadados.c}, \texttt{04\_fsync.c}.
+\item \texttt{exemplos/Makefile} e \texttt{README.md} com comandos de execução.
+\end{itemize}
+\vfill
+{\color{teal}\large Leitura, teste, hipótese e explicação: a mesma abordagem das aulas anteriores.}
+
+\end{frame}
+
+\end{document}
