@@ -1,0 +1,4 @@
+ARQUIVO A - LABORATORIO DE SISTEMAS OPERACIONAIS
+
+Este arquivo sera usado para estudar bloqueios de arquivos no Linux.
+As duas demonstracoes usam exatamente os mesmos arquivos.

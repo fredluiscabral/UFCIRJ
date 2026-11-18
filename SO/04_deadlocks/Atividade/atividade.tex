@@ -1,0 +1,154 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{geometry}
+\usepackage{enumitem}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{xurl}
+\usepackage{listings}
+\geometry{left=2.3cm,right=2.3cm,top=2.45cm,bottom=2.25cm}
+\definecolor{azul}{HTML}{163A5F}
+\definecolor{cinza}{HTML}{566573}
+\definecolor{fundo}{HTML}{F2F5F8}
+\hypersetup{colorlinks=true,urlcolor=azul,linkcolor=azul,pdftitle={Atividade investigativa - Bloqueios de arquivos no Linux},pdfauthor={Sistemas Operacionais}}
+\titleformat{\section}{\large\bfseries\color{azul}}{\thesection.}{.6em}{}
+\titlespacing*{\section}{0pt}{12pt}{5pt}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\footnotesize\color{cinza}Sistemas Operacionais \;|\; Atividade investigativa}
+\fancyhead[R]{\footnotesize\color{cinza}Linux e bloqueio de arquivos}
+\fancyfoot[C]{\footnotesize\thepage}
+\renewcommand{\headrulewidth}{.25pt}
+\setlength{\headheight}{14pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\setlist[enumerate]{leftmargin=*,itemsep=3pt,topsep=3pt}
+\lstdefinestyle{terminal}{basicstyle=\ttfamily\small,backgroundcolor=\color{fundo},frame=single,rulecolor=\color{fundo},xleftmargin=5pt,xrightmargin=5pt,aboveskip=7pt,belowskip=7pt,showstringspaces=false,breaklines=true}
+\begin{document}
+\begin{center}
+{\Large\bfseries\color{azul} Atividade investigativa}\\[4pt]
+{\large\bfseries Bloqueio de arquivos e deadlocks no Linux}\\[8pt]
+{\normalsize Comparação experimental entre \texttt{flock()} e \texttt{fcntl()}}\\[7pt]
+{\footnotesize Ciência da Computação \;--\; Sistemas Operacionais}
+\end{center}
+\vspace{2mm}
+\color{azul}\hrule height .8pt\color{black}
+\vspace{3mm}
+\textbf{Nome(s):} \rule{12cm}{.4pt}\\[5pt]
+\textbf{Turma:} \rule{5cm}{.4pt}\hfill\textbf{Data:} \rule{4cm}{.4pt}
+
+\section{Objetivo}
+Investigar como o Linux trata solicitações de bloqueio sobre arquivos quando duas unidades de execução acessam os mesmos recursos em ordens opostas. Vocês deverão \textbf{formular hipóteses antes de executar}, observar as saídas, estudar as chamadas utilizadas e construir uma explicação para cada resultado.
+
+\textbf{Importante:} esta atividade não apresenta as respostas nem antecipa os resultados dos experimentos. O comportamento observado será parte da investigação.
+
+\section{Entendendo os mecanismos antes do teste}
+A chamada \texttt{open()} com a opção \texttt{O\_RDWR} abre um arquivo para leitura e escrita. \textbf{Abrir não é a mesma coisa que adquirir um bloqueio.} Para solicitar bloqueios, os dois programas utilizam mecanismos distintos:
+
+\smallskip
+\renewcommand{\arraystretch}{1.23}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{2.25cm}X}
+\hline
+\texttt{flock()} & Solicita bloqueios associados à \textbf{descrição de arquivo aberto}. Com \texttt{LOCK\_EX}, o pedido é de bloqueio exclusivo sobre o arquivo como um todo. No primeiro programa, cada thread faz suas próprias chamadas a \texttt{open()}.\\
+\hline
+\texttt{fcntl()} & Permite solicitar bloqueios sobre \textbf{regiões de bytes} de um arquivo. A operação tradicional \texttt{F\_SETLKW} com \texttt{F\_WRLCK} solicita bloqueio de escrita e pode aguardar quando há bloqueio conflitante. Esses bloqueios tradicionais são associados ao \textbf{processo}; por isso o segundo programa é executado em dois processos independentes.\\
+\hline
+\end{tabularx}
+\normalsize
+
+Em ambos os casos, estamos estudando bloqueios \textbf{consultivos (advisory)}: processos que ignoram o protocolo de bloqueio ainda podem tentar acessar os arquivos. Nos dois exemplos, os bloqueios são solicitados explicitamente após a abertura.
+
+\section{Preparação}
+No terminal do Linux, entrem no diretório \texttt{SO/04\_deadlocks/Atividade} do repositório. Os arquivos \texttt{A.txt} e \texttt{B.txt} já estão preparados. Não é necessário modificar seu conteúdo.
+\begin{lstlisting}[style=terminal]
+make
+\end{lstlisting}
+A compilação deve produzir dois programas: \texttt{01\_flock\_threads} e \texttt{02\_fcntl\_processos}. Identifiquem nos códigos onde são utilizados \texttt{open()}, \texttt{sleep(10)}, a solicitação do primeiro bloqueio e a solicitação do segundo.
+
+\newpage
+\section{Experimento 1: duas threads e \texttt{flock()}}
+\textbf{Arquivo:} \texttt{01\_flock\_threads.c}
+
+Este programa cria duas threads no mesmo processo. A primeira trabalha na ordem \texttt{A.txt} $\rightarrow$ \texttt{B.txt}; a segunda, na ordem \texttt{B.txt} $\rightarrow$ \texttt{A.txt}. Cada thread faz uma pausa de dez segundos depois de solicitar o primeiro bloqueio.
+
+\textbf{Antes da execução, escrevam suas hipóteses:}
+\begin{enumerate}[label=H\arabic*.]
+\item O que vocês esperam que ocorra após as duas threads solicitarem o segundo bloqueio? Justifiquem.
+\item O que significa, neste programa, uma thread manter um bloqueio enquanto solicita outro?
+\end{enumerate}
+
+\textbf{Executem:}
+\begin{lstlisting}[style=terminal]
+make teste_flock
+\end{lstlisting}
+O comando \texttt{timeout}, usado pelo Makefile, limita externamente o tempo de observação. \textbf{Seu encerramento não deve ser confundido com uma decisão do kernel sobre o bloqueio.}
+
+\textbf{Registrem:} as mensagens exibidas, a ordem dos acontecimentos, se o programa concluiu por conta própria ou se foi interrompido pelo limite de tempo, e se alguma chamada indicou erro.
+
+\textbf{Análise do código:}
+\begin{enumerate}[label=\arabic*.,start=1]
+\item Por que as threads utilizam \texttt{O\_RDWR} e também \texttt{flock()}? Qual é a diferença entre essas operações?
+\item Localizem \texttt{LOCK\_EX}, \texttt{sleep(10)} e \texttt{pthread\_join()}. Expliquem a finalidade de cada um.
+\item Identifiquem quais recursos são mantidos e quais são solicitados por cada thread. Desenhem o grafo de espera correspondente \emph{ao estado observado}, se ele existir.
+\end{enumerate}
+
+\section{Experimento 2: dois processos e \texttt{fcntl()}}
+\textbf{Arquivo:} \texttt{02\_fcntl\_processos.c}
+
+Aqui o mesmo executável é iniciado \textbf{duas vezes}, criando processos independentes. Cada um recebe os nomes dos arquivos por parâmetros, em ordens opostas. Também há uma pausa de dez segundos.
+
+\textbf{Antes da execução, escrevam suas hipóteses:}
+\begin{enumerate}[label=H\arabic*.,start=3]
+\item O resultado deste experimento será igual ao anterior? Por quê?
+\item Por que este experimento executa dois processos em vez de duas threads do mesmo processo?
+\end{enumerate}
+
+\textbf{Executem:}
+\begin{lstlisting}[style=terminal]
+make teste_fcntl
+\end{lstlisting}
+\textbf{Registrem:} as mensagens de ambos os processos (observando os \emph{PIDs}), se alguma operação aguardou, se apareceu alguma mensagem de erro e o que aconteceu em seguida. Se houver erro, procurem o significado na documentação; não basta copiar a mensagem.
+
+\textbf{Análise do código:}
+\begin{enumerate}[label=\arabic*.,start=4]
+\item Qual é a finalidade dos campos \texttt{l\_type}, \texttt{l\_whence}, \texttt{l\_start} e \texttt{l\_len} da estrutura \texttt{struct flock}?
+\item Qual é a diferença entre \texttt{F\_WRLCK}, \texttt{F\_SETLKW} e a opção \texttt{O\_RDWR}?
+\item Em caso de falha na segunda solicitação, quais comandos do programa são executados depois? Expliquem como isso pode afetar o outro processo.
+\end{enumerate}
+
+\newpage
+\section{Comparação e conclusão}
+Respondam às questões a seguir \textbf{com base no código e na saída realmente observada}.
+\begin{enumerate}[label=\arabic*.,start=7]
+\item Comparem os resultados dos dois experimentos. Ambos concluíram? Algum aguardou, precisou ser interrompido ou retornou erro? O que as evidências indicam sobre cada mecanismo?
+\item Retomem as quatro condições necessárias para deadlock (Coffman): exclusão mútua, posse e espera, ausência de preempção e espera circular. Analisem sua presença no(s) estado(s) observado(s).
+\item Expliquem por que não é correto afirmar que \texttt{open(..., O\_RDWR)} sozinho impede outro processo ou thread de abrir o arquivo.
+\item Consultem a documentação de \texttt{flock()} e de bloqueios tradicionais com \texttt{fcntl()}. Quais diferenças de escopo e de associação dos bloqueios ajudam a interpretar o comportamento observado?
+\item Proponham \textbf{uma mudança simples na ordem das solicitações} para reduzir o risco de espera circular. Expliquem por que a mudança funcionaria e, se possível, testem-na em uma cópia local dos arquivos.
+\end{enumerate}
+
+\section{Entrega}
+Entreguem \textbf{um relatório em PDF} com identificação dos integrantes, hipóteses H1--H4, comandos utilizados, trechos selecionados das saídas, respostas 1--11 e uma conclusão de até um parágrafo sobre o que os testes ensinaram. Não é necessário anexar os códigos inteiros.
+
+Os critérios de avaliação serão: qualidade das hipóteses, fidelidade dos registros, interpretação das chamadas de sistema, compreensão das condições de deadlock e fundamentação da comparação.
+
+\section{Referências para investigação}
+\begin{itemize}[leftmargin=*]
+\item \textbf{Código-fonte da atividade:} \url{https://github.com/fredluiscabral/UFCIRJ/tree/main/SO/04_deadlocks/Atividade}
+\item Manual Linux: \texttt{man 2 open}, \texttt{man 2 flock}, \texttt{man 2 fcntl} e \texttt{man 2 fcntl\_locking}.
+\item Documentação online: \url{https://man7.org/linux/man-pages/man2/flock.2.html} e \url{https://man7.org/linux/man-pages/man2/fcntl_locking.2.html}.
+\end{itemize}
+\vspace{5mm}
+\begin{center}
+\color{azul}\rule{.88\linewidth}{.4pt}\\[3pt]
+\small\textbf{A sequência sugerida é: prever $\rightarrow$ executar $\rightarrow$ registrar $\rightarrow$ explicar.}
+\end{center}
+\end{document}

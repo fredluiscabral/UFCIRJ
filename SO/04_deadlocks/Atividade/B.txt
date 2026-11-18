@@ -1,0 +1,4 @@
+ARQUIVO B - LABORATORIO DE SISTEMAS OPERACIONAIS
+
+Este arquivo tambem sera usado nos experimentos de sincronizacao.
+Observe como cada programa solicita acesso aos dois arquivos.
