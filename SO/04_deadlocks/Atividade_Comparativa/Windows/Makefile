@@ -7,6 +7,9 @@ all: 01_lockfileex_threads.exe
 	$(CC) $(CFLAGS) $< -o $@
 
 demo: 01_lockfileex_threads.exe
-	.\01_lockfileex_threads.exe
+	./01_lockfileex_threads.exe
 
-.PHONY: all demo
+clean:
+	rm -f 01_lockfileex_threads.exe
+
+.PHONY: all demo clean

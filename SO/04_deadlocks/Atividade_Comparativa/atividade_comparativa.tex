@@ -1,0 +1,186 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{geometry}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{xurl}
+\usepackage{xcolor}
+\usepackage{listings}
+\geometry{left=2.25cm,right=2.25cm,top=2.25cm,bottom=2.1cm}
+\definecolor{marinho}{HTML}{193D62}
+\definecolor{cinza}{HTML}{65717D}
+\definecolor{fundo}{HTML}{F2F5F9}
+\definecolor{laranja}{HTML}{C46B34}
+\hypersetup{colorlinks=true,urlcolor=marinho,linkcolor=marinho,pdftitle={Atividade investigativa II - Comparacao de deadlocks entre Linux Windows macOS},pdfauthor={Sistemas Operacionais}}
+\titleformat{\section}{\large\bfseries\color{marinho}}{\thesection.}{.6em}{}
+\titleformat{\subsection}{\normalsize\bfseries\color{marinho}}{\thesubsection.}{.6em}{}
+\titlespacing*{\section}{0pt}{10pt}{4pt}
+\titlespacing*{\subsection}{0pt}{7pt}{3pt}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\footnotesize\color{cinza}Sistemas Operacionais | Atividade investigativa II}
+\fancyhead[R]{\footnotesize\color{cinza}Linux \;\textbullet\; Windows \;\textbullet\; macOS}
+\fancyfoot[C]{\footnotesize\thepage}
+\renewcommand{\headrulewidth}{.3pt}
+\setlength{\headheight}{15pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\setlist[enumerate]{leftmargin=*,itemsep=2.5pt,topsep=2pt}
+\setlist[itemize]{leftmargin=*,itemsep=2pt,topsep=2pt}
+\lstdefinestyle{terminal}{basicstyle=\ttfamily\small,backgroundcolor=\color{fundo},frame=single,rulecolor=\color{fundo},xleftmargin=5pt,xrightmargin=5pt,aboveskip=4pt,belowskip=4pt,showstringspaces=false,breaklines=true}
+\newcommand{\emphbox}[1]{\vspace{2pt}\noindent\colorbox{fundo}{\parbox{\dimexpr\linewidth-2\fboxsep}{#1}}\vspace{2pt}}
+\begin{document}
+\begin{center}
+{\Large\bfseries\color{marinho} Atividade Investigativa II}\\[3pt]
+{\large\bfseries Deadlocks: uma comparação entre sistemas operacionais}\\[5pt]
+{\normalsize Linux, Windows e macOS \;|\; APIs de bloqueio de arquivos}\\[5pt]
+{\footnotesize Ciência da Computação \;--\; Sistemas Operacionais}
+\end{center}
+\vspace{1mm}
+{\color{marinho}\hrule height .9pt}
+\vspace{3mm}
+\textbf{Integrante(s):} \rule{11.4cm}{.4pt}\\[6pt]
+\textbf{Turma:} \rule{5cm}{.4pt}\hfill\textbf{Data:} \rule{4cm}{.4pt}
+
+\section{Proposta da atividade}
+Esta é uma \textbf{nova atividade, independente da atividade anterior sobre deadlocks no Linux}. O objetivo é comparar \textbf{como três sistemas operacionais se comportam diante de pedidos de bloqueio de arquivos em ordens opostas}, utilizando mecanismos próprios de cada plataforma.
+
+O trabalho exige: \textbf{formular hipóteses, ler os códigos, executar os testes, registrar evidências e interpretar os resultados}. Não assumam que chamadas parecidas tenham a mesma semântica, nem que os sistemas operacionais necessariamente produzam o mesmo resultado.
+
+\emphbox{\textbf{Regra da investigação:} este roteiro explica o que as APIs solicitam, mas \textbf{não antecipa o desfecho dos testes}. Diferenciem sempre o comportamento observado de suas hipóteses e de informações obtidas na documentação.}
+
+\section{O que é igual e o que é diferente?}
+Em todos os códigos, duas unidades de execução disputam dois arquivos, \texttt{A.txt} e \texttt{B.txt}: uma solicita A e depois B; a outra solicita B e depois A. Há um intervalo de dez segundos entre as solicitações.
+
+\renewcommand{\arraystretch}{1.18}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{2.55cm}p{2.85cm}X}
+\toprule
+Sistema / API & Unidades de execução & O que a chamada solicita\\
+\midrule
+Linux: \texttt{flock()} & Duas \textit{threads} & Bloqueio consultivo exclusivo do arquivo; associado à descrição de arquivo aberto no Linux.\\
+Linux: \texttt{fcntl()} & Dois processos & Bloqueio tradicional de escrita sobre uma região; associado ao processo no modelo POSIX.\\
+macOS: \texttt{flock()} & Duas \textit{threads} & Bloqueio exclusivo solicitado sobre o arquivo por meio de uma API POSIX/BSD.\\
+macOS: \texttt{fcntl()} & Dois processos & Bloqueio de escrita sobre uma região por \texttt{F\_SETLKW}, com espera caso necessário.\\
+Windows:\newline \texttt{LockFileEx()} & Duas \textit{threads} & Bloqueio exclusivo de um intervalo de bytes por meio de um \textit{handle} Win32.\\
+\bottomrule
+\end{tabularx}
+
+\textbf{Observação conceitual:} abrir com \texttt{O\_RDWR} no POSIX ou solicitar acesso de leitura/escrita com \texttt{CreateFileA()} no Windows não é o mesmo que adquirir os bloqueios solicitados posteriormente. As regras de compartilhamento de abertura do Windows também não devem ser confundidas com \texttt{LockFileEx()}.
+
+\newpage
+\section{Antes de executar: análise dos códigos}
+Encontrem, em \textbf{cada programa}, as chamadas responsáveis pela abertura do primeiro arquivo, pela aquisição do primeiro bloqueio, pela pausa, pela abertura do segundo arquivo, pela solicitação do segundo bloqueio e pela liberação de recursos.
+
+\begin{enumerate}[label=H\arabic*.]
+\item Para cada API, qual resultado vocês esperam quando as duas unidades solicitarem o segundo bloqueio? Registrem a justificativa \textbf{antes} da execução.
+\item A troca de \textit{threads} por processos pode alterar o significado dos bloqueios? Expliquem sua hipótese.
+\item Quais diferenças esperam encontrar entre Linux e macOS usando os nomes \texttt{flock()} e \texttt{fcntl()}? Nomes iguais garantem implementação idêntica?
+\item No Windows, o fato de bloquear apenas \textbf{um byte} pode ser relevante para o conflito entre as threads? Justifiquem.
+\end{enumerate}
+
+\section{Experimentos no Linux}
+\textbf{Diretório:} \texttt{Atividade\_Comparativa/Linux/}. Utilizem um terminal Linux e um sistema de arquivos local.
+\begin{lstlisting}[style=terminal]
+make
+make teste_flock
+make teste_fcntl
+\end{lstlisting}
+\textbf{Programa 1 -- \texttt{01\_flock\_threads.c}:} localizem a criação e a espera das threads, pelas chamadas \texttt{pthread\_create()} e \texttt{pthread\_join()}. Identifiquem também \texttt{open()}, \texttt{flock()} e \texttt{sleep(10)}.
+
+\textbf{Programa 2 -- \texttt{02\_fcntl\_processos.c}:} verifiquem como o Makefile inicia dois processos em ordens opostas. Examinem \texttt{struct flock}, \texttt{F\_WRLCK}, \texttt{F\_SETLKW} e os descritores abertos por cada processo.
+
+\emphbox{\textbf{Atenção:} no Linux, o comando \texttt{timeout} do Makefile limita externamente o tempo de observação. \textbf{Não o interpretem como uma detecção ou recuperação feita pelo kernel}. Verifiquem se restaram processos em execução antes de repetir o teste.}
+
+\section{Experimentos no macOS}
+\textbf{Diretório:} \texttt{Atividade\_Comparativa/MacOS/}. Utilizem o Terminal do macOS com as ferramentas de linha de comando do Xcode instaladas.
+\begin{lstlisting}[style=terminal]
+make
+./01_flock_threads
+./02_fcntl_processos
+\end{lstlisting}
+\textbf{Programa 3 -- \texttt{01\_flock\_threads.c}:} localizem as duas chamadas a \texttt{pthread\_create()}, as aberturas separadas e os pedidos de bloqueio exclusivo.
+
+\textbf{Programa 4 -- \texttt{02\_fcntl\_processos.c}:} localizem \texttt{fork()}, \texttt{getpid()}, \texttt{struct flock} e a chamada a \texttt{F\_SETLKW}. Observem por que as aberturas ocorrem nos processos filhos.
+
+Executem \textbf{um teste de cada vez}. Caso um teste não termine, usem \texttt{Ctrl+C} e registrem que a interrupção foi manual, não uma conclusão espontânea do programa.
+
+\newpage
+\section{Experimento no Windows}
+\textbf{Diretório:} \texttt{Atividade\_Comparativa/Windows/}. Este é um experimento \textbf{Win32 nativo}; executá-lo dentro do WSL testaria outro ambiente.
+
+\textbf{Com MinGW-w64 (CMD ou terminal apropriado):}
+\begin{lstlisting}[style=terminal]
+compilar_mingw.bat
+01_lockfileex_threads.exe
+\end{lstlisting}
+\textbf{Alternativa com MSVC:} no \textit{Developer Command Prompt}, executem:
+\begin{lstlisting}[style=terminal]
+compilar_msvc.bat
+01_lockfileex_threads.exe
+\end{lstlisting}
+
+\textbf{Programa 5 -- \texttt{01\_lockfileex\_threads.c}:} identifiquem:
+\begin{itemize}
+\item a abertura: \texttt{CreateFileA()};
+\item as flags de compartilhamento: \texttt{FILE\_SHARE\_READ} e \texttt{FILE\_SHARE\_WRITE};
+\item os bloqueios e desbloqueios: \texttt{LockFileEx()} e \texttt{UnlockFileEx()};
+\item a espera e o tratamento de erros: \texttt{Sleep()} e \texttt{GetLastError()};
+\item a espera pelas duas threads: \texttt{WaitForMultipleObjects()}.
+\end{itemize}
+
+\emphbox{\textbf{Detalhe para investigar:} o código Windows solicita um bloqueio exclusivo de \textbf{um byte a partir do deslocamento zero}, usando um \texttt{HANDLE} específico. Os exemplos de \texttt{fcntl()} usam uma região que se estende até o fim do arquivo. Observem o que é comparável e o que não é.}
+
+\section{Registro experimental}
+Antes de discutir o resultado, anotem para \textbf{cada experimento}: sistema operacional e versão, sistema de arquivos local quando conhecido, compilador, comandos executados, mensagens relevantes e como a execução terminou.
+
+\begin{tabularx}{\textwidth}{>{\bfseries}p{2.8cm}X X}
+\toprule
+Teste & Evidências observadas & Finalização / erro (se houver)\\
+\midrule
+Linux: \texttt{flock()} & \rule{0pt}{1.0cm} & \\
+Linux: \texttt{fcntl()} & \rule{0pt}{1.0cm} & \\
+macOS: \texttt{flock()} & \rule{0pt}{1.0cm} & \\
+macOS: \texttt{fcntl()} & \rule{0pt}{1.0cm} & \\
+Windows: \texttt{LockFileEx()} & \rule{0pt}{1.0cm} & \\
+\bottomrule
+\end{tabularx}
+
+Se alguma chamada retornar erro, registrem o \textbf{código numérico ou simbólico} e pesquisem seu significado no manual oficial da plataforma. Não atribuam automaticamente todo erro a um deadlock.
+
+\section{Condições de Coffman}
+Para cada estado de espera observado, identifiquem: \textbf{exclusão mútua}, \textbf{posse e espera}, \textbf{ausência de preempção} e \textbf{espera circular}. Quando fizer sentido, representem o estado por um grafo de espera. Distingam \textbf{um estado de espera circular}, \textbf{a detecção de deadlock} e \textbf{a recuperação de um impasse}.
+
+\section{Questões comparativas}
+Respondam com evidências dos códigos e das execuções. Ao utilizar documentação, identifiquem a fonte consultada.
+\begin{enumerate}[label=Q\arabic*.]
+\item Quais diferenças existem entre \texttt{open(..., O\_RDWR)}, \texttt{CreateFileA()} e as operações efetivas de bloqueio utilizadas nos programas?
+\item Que entidade cada API considera para associar o bloqueio: processo, descrição de arquivo aberta ou \textit{handle}? Que partes dos códigos ajudam a verificar isso?
+\item No Linux, que diferenças vocês observaram entre \texttt{flock()} e \texttt{fcntl()}? Como os códigos tratam possíveis erros e a liberação dos recursos?
+\item Comparando Linux e macOS, as mesmas APIs produziram o mesmo comportamento? Quais evidências sustentam a resposta?
+\item Como o comportamento do Windows se compara ao das duas plataformas POSIX? Que cuidados são necessários para comparar bloqueios de arquivo inteiro com bloqueios de intervalos de bytes?
+\item Houve casos de espera, falha, interrupção manual ou término espontâneo? Expliquem \textbf{quem} produziu cada evento: o programa, o kernel, a API ou um comando externo.
+\item Em quais experimentos foi possível identificar as condições de Coffman? Um erro retornado por uma chamada implica, por si só, recuperação do estado da aplicação?
+\item Proponham uma alteração \textbf{pequena} no código para evitar a aquisição em ordens inversas. Justifiquem sua proposta e, se puderem, realizem um teste adicional em cópia do programa.
+\end{enumerate}
+
+\section{O que entregar}
+Entreguem \textbf{um novo relatório em PDF}, separado da atividade original do Linux, contendo: identificação; hipóteses H1--H4; tabela de observações preenchida; saídas representativas; respostas Q1--Q8; análise das condições de Coffman; e uma conclusão comparativa.
+
+\textbf{Acesso a sistemas diferentes:} executem os testes nos ambientes aos quais realmente tenham acesso. Para uma plataforma indisponível, façam pesquisa documental e deixem explícito que \textbf{não houve execução nativa}. Nunca apresentem como observado um resultado apenas pesquisado ou presumido.
+
+\section{Fontes para consulta}
+\begin{itemize}
+\item \textbf{Linux:} \url{https://man7.org/linux/man-pages/man2/flock.2.html} e \url{https://man7.org/linux/man-pages/man2/fcntl_locking.2.html}.
+\item \textbf{macOS:} manuais \texttt{man 2 flock} e \texttt{man 2 fcntl}; \url{https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/fcntl.2.html}.
+\item \textbf{Windows:} \url{https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-lockfileex} e documentação de \texttt{CreateFileA()} e \texttt{GetLastError()}.
+\end{itemize}
+\end{document}
