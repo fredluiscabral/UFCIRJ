@@ -1,0 +1,3 @@
+ARQUIVO B - EXPERIMENTO DE BLOQUEIOS DE ARQUIVOS
+Outra linha de exemplo para leitura e escrita.
+O conteudo nao deve ser alterado durante os testes.
