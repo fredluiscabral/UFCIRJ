@@ -1,0 +1,4 @@
+bin/
+assembly/
+relatorios/
+*.o
