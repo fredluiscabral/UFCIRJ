@@ -1,4 +1,8 @@
 matriz_cpu
 matriz_h100
-*.o
-cuda_h100_*.out
+matriz_openmp
+*.out
+resultados_openmp_*.csv
+resultados_cuda_*.csv
+openmp_[0-9]*.txt
+cuda_comparacao_[0-9]*.txt
